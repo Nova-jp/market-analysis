@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+
+{% block title %}イールドカーブ分析{% endblock %}
+
+{% block head %}
+<style>
+    .yield-curve-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .date-selector {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    
+    .date-selector select {
+        padding: 10px 20px;
+        font-size: 16px;
+        border-radius: 5px;
+        border: 2px solid #ddd;
+        background: white;
+        min-width: 200px;
+    }
+    
+    .chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    
+    .stats-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        color: #666;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    
+    .error-message {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+        border: 1px solid #f5c6cb;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="yield-curve-container">
+    <h1 class="mb-4"><i class="fas fa-chart-line"></i> イールドカーブ分析</h1>
+    
+    <!-- 複数日付選択とフィルタ -->
+    <div class="date-selector">
+        <div class="row">
+            <!-- 複数日付選択 -->
+            <div class="col-md-6">
+                <h5><i class="fas fa-calendar-alt"></i> 比較日付選択</h5>
+                <div class="mb-3">
+                    <select id="dateSelector" class="form-control" multiple size="5">
+                        {% for date in available_dates[:10] %}
+                        <option value="{{ date }}" {% if loop.first %}selected{% endif %}>
+                            {{ date }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">複数選択可能（Ctrl+クリック）</small>
+                </div>
+                <button id="clearDates" class="btn btn-outline-secondary btn-sm">選択解除</button>
+            </div>
+            
+            <!-- 残存年数範囲フィルタ -->
+            <div class="col-md-6">
+                <h5><i class="fas fa-filter"></i> 残存年数フィルタ</h5>
+                <div class="mb-3">
+                    <label for="minYears">最小年数:</label>
+                    <input type="number" id="minYears" class="form-control" value="0" min="0" max="50" step="0.1">
+                </div>
+                <div class="mb-3">
+                    <label for="maxYears">最大年数:</label>
+                    <input type="number" id="maxYears" class="form-control" value="50" min="0" max="50" step="0.1">
+                </div>
+                <button id="applyFilter" class="btn btn-primary btn-sm">フィルタ適用</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ローディング表示 -->
+    <div id="loading" class="loading" style="display: none;">
+        <i class="fas fa-spinner fa-spin"></i> データを読み込み中...
+    </div>
+
+    <!-- エラー表示 -->
+    <div id="errorMessage" class="error-message" style="display: none;">
+        <i class="fas fa-exclamation-triangle"></i> 
+        <span id="errorText"></span>
+    </div>
+
+    <!-- チャート表示 -->
+    <div class="chart-container">
+        <canvas id="yieldChart" width="800" height="400"></canvas>
+    </div>
+
+    <!-- 統計情報 -->
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-value" id="recordCount">-</div>
+            <div class="stat-label">データ件数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="yieldRange">-</div>
+            <div class="stat-label">利回り範囲</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="avgYield">-</div>
+            <div class="stat-label">平均利回り</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="maturityRange">-</div>
+            <div class="stat-label">満期範囲</div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let yieldChart = null;
+
+// チャート初期化
+function initializeChart() {
+    const ctx = document.getElementById('yieldChart').getContext('2d');
+    
+    yieldChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: []
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    title: {
+                        display: true,
+                        text: '残存年数',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: '利回り (%)',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                title: {
+                    display: true,
+                    text: 'イールドカーブ',
+                    font: { size: 18, weight: 'bold' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const point = context.raw;
+                            return [
+                                `債券名: ${point.bond_name}`,
+                                `残存年数: ${point.x.toFixed(1)}年`,
+                                `利回り: ${point.y.toFixed(3)}%`,
+                                `日付: ${point.date}`
+                            ];
+                        }
+                    }
+                }
+            },
+            elements: {
+                point: {
+                    radius: 3,  // 小さいサイズに設定
+                    hoverRadius: 6
+                }
+            }
+        }
+    });
+}
+
+// 複数日データロード
+async function loadMultipleDates() {
+    const selectedDates = Array.from(document.getElementById('dateSelector').selectedOptions)
+                               .map(option => option.value);
+    
+    if (selectedDates.length === 0) {
+        chartData = {};
+        updateChart();
+        updateStats([]);
+        return;
+    }
+    
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('errorMessage').style.display = 'none';
+    
+    try {
+        // 既存データをクリア
+        chartData = {};
+        
+        // 各日付のデータを並行取得
+        const promises = selectedDates.map(async (date) => {
+            try {
+                const response = await fetch(`/api/yield-curve/${date}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'success' && data.data) {
+                        chartData[date] = data.data;
+                    }
+                }
+            } catch (error) {
+                console.error(`Error loading ${date}:`, error);
+            }
+        });
+        
+        await Promise.all(promises);
+        
+        updateChart();
+        updateCombinedStats();
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showError(`データの読み込みに失敗しました: ${error.message}`);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+// 色生成関数
+function generateColor(index) {
+    const colors = [
+        'rgba(54, 162, 235, 0.8)',   // Blue
+        'rgba(255, 99, 132, 0.8)',   // Red  
+        'rgba(75, 192, 192, 0.8)',   // Green
+        'rgba(255, 206, 86, 0.8)',   // Yellow
+        'rgba(153, 102, 255, 0.8)',  // Purple
+        'rgba(255, 159, 64, 0.8)',   // Orange
+        'rgba(199, 199, 199, 0.8)',  // Grey
+        'rgba(83, 102, 255, 0.8)',   // Indigo
+    ];
+    return colors[index % colors.length];
+}
+
+// 複数日データ管理
+let chartData = {};
+let currentFilters = { minYears: 0, maxYears: 50 };
+
+// チャート更新（複数日対応）
+function updateChart() {
+    const datasets = [];
+    let dataIndex = 0;
+    
+    Object.keys(chartData).forEach((date, index) => {
+        const data = chartData[date];
+        // フィルタ適用
+        const filteredData = data.filter(d => 
+            d.maturity_years >= currentFilters.minYears && 
+            d.maturity_years <= currentFilters.maxYears
+        );
+        
+        if (filteredData.length > 0) {
+            const color = generateColor(index);
+            datasets.push({
+                label: `${date} (${filteredData.length}件)`,
+                data: filteredData.map(d => ({
+                    x: d.maturity_years,
+                    y: d.yield_rate,
+                    bond_name: d.bond_name,
+                    date: date
+                })),
+                backgroundColor: color,
+                borderColor: color.replace('0.8', '1'),
+                pointRadius: 3,
+                showLine: false
+            });
+        }
+    });
+    
+    yieldChart.data.datasets = datasets;
+    yieldChart.options.plugins.title.text = 
+        Object.keys(chartData).length > 1 ? 
+        `イールドカーブ比較 (${Object.keys(chartData).length}日)` :
+        `イールドカーブ - ${Object.keys(chartData)[0] || ''}`;
+    
+    yieldChart.update();
+}
+
+// 複数日統計情報更新
+function updateCombinedStats() {
+    const allData = [];
+    Object.keys(chartData).forEach(date => {
+        const filtered = chartData[date].filter(d => 
+            d.maturity_years >= currentFilters.minYears && 
+            d.maturity_years <= currentFilters.maxYears
+        );
+        allData.push(...filtered);
+    });
+    
+    if (allData.length === 0) {
+        document.getElementById('recordCount').textContent = '0';
+        document.getElementById('yieldRange').textContent = '-';
+        document.getElementById('avgYield').textContent = '-';
+        document.getElementById('maturityRange').textContent = '-';
+        return;
+    }
+    
+    const yields = allData.map(d => d.yield_rate);
+    const maturities = allData.map(d => d.maturity_years);
+    
+    document.getElementById('recordCount').textContent = allData.length;
+    document.getElementById('yieldRange').textContent = 
+        `${Math.min(...yields).toFixed(3)}% - ${Math.max(...yields).toFixed(3)}%`;
+    document.getElementById('avgYield').textContent = 
+        `${(yields.reduce((a,b) => a + b, 0) / yields.length).toFixed(3)}%`;
+    document.getElementById('maturityRange').textContent = 
+        `${Math.min(...maturities).toFixed(1)} - ${Math.max(...maturities).toFixed(1)}年`;
+}
+
+// 単一日統計情報更新（後方互換性）
+function updateStats(data) {
+    updateCombinedStats();
+}
+
+// エラー表示
+function showError(message) {
+    document.getElementById('errorText').textContent = message;
+    document.getElementById('errorMessage').style.display = 'block';
+}
+
+// 初期化
+document.addEventListener('DOMContentLoaded', function() {
+    initializeChart();
+    
+    // 複数日選択のイベントハンドラ
+    const dateSelector = document.getElementById('dateSelector');
+    dateSelector.addEventListener('change', function() {
+        loadMultipleDates();
+    });
+    
+    // フィルタ適用ボタン
+    document.getElementById('applyFilter').addEventListener('click', function() {
+        const minYears = parseFloat(document.getElementById('minYears').value) || 0;
+        const maxYears = parseFloat(document.getElementById('maxYears').value) || 50;
+        currentFilters = { minYears, maxYears };
+        updateChart();
+        updateCombinedStats();
+    });
+    
+    // 選択解除ボタン
+    document.getElementById('clearDates').addEventListener('click', function() {
+        dateSelector.selectedIndex = -1;
+        chartData = {};
+        updateChart();
+        updateCombinedStats();
+    });
+    
+    // 初回データロード（最初の日付）
+    loadMultipleDates();
+});
+</script>
+{% endblock %}

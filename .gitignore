@@ -1,0 +1,125 @@
+# セキュリティ関連ファイル（絶対にコミット禁止）
+.env
+.env.local
+.env.production
+.env.development
+*.key
+*.pem
+*.crt
+config/secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ログファイル
+*.log
+logs/
+data_collection_*.log
+batch_collection.log
+
+# 一時ファイル・開発用ファイル
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# データベース
+*.db
+*.sqlite
+*.sqlite3
+
+# 大容量データファイル（一部例外あり）
+*.csv
+*.xlsx
+*.xls
+data/raw/
+data/processed/
+data/temp/
+
+# 一時的なデータファイル
+data_files/collected_*.json
+data_files/*_backup_*.json
+data_files/temp_*.json
+data_files/archive_*.json
+
+# テスト・開発用画像
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Shell Scripts (temporary)
+run_*.sh
+*.commands.txt
+
+# Claude Code specific
+.claude/
+
+# 一時的なドキュメント
+PROJECT_STRUCTURE.md
+SESSION_STATUS.md
+README_*.md
+
+# 保持するファイル（例外）
+!data_files/target_dates_latest.json
+!data_files/available_dates_*.json
+!CLAUDE.md

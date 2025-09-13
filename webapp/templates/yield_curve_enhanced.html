@@ -1,0 +1,668 @@
+{% extends "base.html" %}
+
+{% block title %}イールドカーブ分析（強化版）{% endblock %}
+
+{% block head %}
+<style>
+    .yield-curve-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .controls-section {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .curve-panels {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .curve-panel {
+        background: white;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        transition: border-color 0.3s;
+    }
+    
+    .curve-panel.active {
+        border-color: #007bff;
+        box-shadow: 0 0 10px rgba(0,123,255,0.3);
+    }
+    
+    .panel-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #495057;
+    }
+    
+    .date-select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    
+    .panel-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin: 10px auto;
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        height: 500px;
+    }
+    
+    .pca-section {
+        margin-top: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 10px;
+    }
+    
+    .pca-controls {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .pca-control-group {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .pca-charts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 20px;
+    }
+    
+    .pca-chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        height: 400px;
+    }
+    
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    
+    .error-message {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+        border: 1px solid #f5c6cb;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        color: #666;
+        font-size: 12px;
+        margin-top: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="yield-curve-container">
+    <h1 class="mb-4"><i class="fas fa-chart-line"></i> イールドカーブ分析（強化版）</h1>
+    
+    <!-- イールドカーブコントロール -->
+    <div class="controls-section">
+        <h3><i class="fas fa-sliders-h"></i> イールドカーブ設定</h3>
+        
+        <!-- 5つのカーブパネル -->
+        <div class="curve-panels">
+            <div class="curve-panel" id="panel1">
+                <div class="panel-title">カーブ 1</div>
+                <div class="panel-color" style="background-color: #ff6b6b;"></div>
+                <select class="date-select" id="date1">
+                    <option value="">日付を選択</option>
+                    {% for date in available_dates[:500] %}
+                    <option value="{{ date }}" {% if loop.first %}selected{% endif %}>{{ date }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="curve-panel" id="panel2">
+                <div class="panel-title">カーブ 2</div>
+                <div class="panel-color" style="background-color: #4ecdc4;"></div>
+                <select class="date-select" id="date2">
+                    <option value="">日付を選択</option>
+                    {% for date in available_dates[:500] %}
+                    <option value="{{ date }}">{{ date }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="curve-panel" id="panel3">
+                <div class="panel-title">カーブ 3</div>
+                <div class="panel-color" style="background-color: #45b7d1;"></div>
+                <select class="date-select" id="date3">
+                    <option value="">日付を選択</option>
+                    {% for date in available_dates[:500] %}
+                    <option value="{{ date }}">{{ date }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="curve-panel" id="panel4">
+                <div class="panel-title">カーブ 4</div>
+                <div class="panel-color" style="background-color: #f9ca24;"></div>
+                <select class="date-select" id="date4">
+                    <option value="">日付を選択</option>
+                    {% for date in available_dates[:500] %}
+                    <option value="{{ date }}">{{ date }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="curve-panel" id="panel5">
+                <div class="panel-title">カーブ 5</div>
+                <div class="panel-color" style="background-color: #a55eea;"></div>
+                <select class="date-select" id="date5">
+                    <option value="">日付を選択</option>
+                    {% for date in available_dates[:500] %}
+                    <option value="{{ date }}">{{ date }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <!-- 更新ボタンとフィルタ -->
+        <div class="row mt-3">
+            <div class="col-md-6">
+                <button id="updateCurves" class="btn btn-primary btn-lg">
+                    <i class="fas fa-sync"></i> カーブ更新
+                </button>
+                <button id="clearAll" class="btn btn-outline-secondary btn-lg ml-2">
+                    <i class="fas fa-times"></i> 全クリア
+                </button>
+            </div>
+            <div class="col-md-6">
+                <div class="row">
+                    <div class="col-6">
+                        <label for="minYears">最小年数:</label>
+                        <input type="number" id="minYears" class="form-control" value="0" min="0" max="50" step="0.1">
+                    </div>
+                    <div class="col-6">
+                        <label for="maxYears">最大年数:</label>
+                        <input type="number" id="maxYears" class="form-control" value="50" min="0" max="50" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ローディング・エラー表示 -->
+    <div id="loading" class="loading" style="display: none;">
+        <i class="fas fa-spinner fa-spin"></i> データを読み込み中...
+    </div>
+    
+    <div id="errorMessage" class="error-message" style="display: none;">
+        <i class="fas fa-exclamation-triangle"></i> 
+        <span id="errorText"></span>
+    </div>
+
+    <!-- イールドカーブチャート -->
+    <div class="chart-container">
+        <canvas id="yieldChart" width="1000" height="500"></canvas>
+    </div>
+    
+    <!-- 統計情報 -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="activeCurves">0</div>
+            <div class="stat-label">アクティブカーブ数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="totalPoints">0</div>
+            <div class="stat-label">総データ点数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="dateRange">-</div>
+            <div class="stat-label">対象期間</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="yieldSpread">-</div>
+            <div class="stat-label">利回りスプレッド</div>
+        </div>
+    </div>
+
+    <!-- 主成分分析セクション -->
+    <div class="pca-section">
+        <h3><i class="fas fa-project-diagram"></i> 主成分分析（PCA）</h3>
+        
+        <!-- PCAコントロール -->
+        <div class="pca-controls">
+            <div class="pca-control-group">
+                <label for="pcaDays"><strong>分析期間（日数）:</strong></label>
+                <input type="number" id="pcaDays" class="form-control" value="100" min="50" max="1000" step="50">
+                <small class="text-muted">過去何日分のデータを使用するか</small>
+            </div>
+            
+            <div class="pca-control-group">
+                <label for="pcaComponents"><strong>主成分数:</strong></label>
+                <input type="number" id="pcaComponents" class="form-control" value="3" min="1" max="10" step="1">
+                <small class="text-muted">第何主成分まで分析するか</small>
+            </div>
+            
+            <div class="pca-control-group">
+                <label for="splinePoints"><strong>スプライン補間点数:</strong></label>
+                <input type="number" id="splinePoints" class="form-control" value="50" min="20" max="100" step="10">
+                <small class="text-muted">連続データの補間点数</small>
+            </div>
+        </div>
+        
+        <div class="text-center">
+            <button id="runPCA" class="btn btn-success btn-lg">
+                <i class="fas fa-calculator"></i> PCA実行
+            </button>
+        </div>
+        
+        <!-- PCAチャート -->
+        <div class="pca-charts" id="pcaCharts" style="display: none;">
+            <div class="pca-chart-container">
+                <h5>主成分ベクトル</h5>
+                <canvas id="pcaVectorsChart" width="500" height="400"></canvas>
+            </div>
+            <div class="pca-chart-container">
+                <h5>復元vs実際の差分</h5>
+                <canvas id="pcaDiffChart" width="500" height="400"></canvas>
+            </div>
+        </div>
+        
+        <!-- PCA統計 -->
+        <div class="stats-grid" id="pcaStats" style="display: none;">
+            <div class="stat-card">
+                <div class="stat-value" id="pcaVariance">-</div>
+                <div class="stat-label">寄与率合計</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="pcaError">-</div>
+                <div class="stat-label">平均復元誤差</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="pcaSamples">-</div>
+                <div class="stat-label">分析サンプル数</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// グローバル変数
+let yieldChart = null;
+let pcaVectorsChart = null;
+let pcaDiffChart = null;
+const curveColors = [
+    '#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#a55eea'
+];
+
+// チャート初期化
+function initializeYieldChart() {
+    const ctx = document.getElementById('yieldChart').getContext('2d');
+    
+    yieldChart = new Chart(ctx, {
+        type: 'scatter',
+        data: { datasets: [] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'linear',
+                    title: { display: true, text: '残存年数', font: { size: 14, weight: 'bold' } },
+                    grid: { color: 'rgba(0,0,0,0.1)' }
+                },
+                y: {
+                    title: { display: true, text: '利回り (%)', font: { size: 14, weight: 'bold' } },
+                    grid: { color: 'rgba(0,0,0,0.1)' }
+                }
+            },
+            plugins: {
+                legend: { display: true, position: 'top' },
+                title: { display: true, text: 'イールドカーブ比較', font: { size: 18, weight: 'bold' } },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const point = context.raw;
+                            return [
+                                `債券名: ${point.bond_name}`,
+                                `残存年数: ${point.x.toFixed(1)}年`,
+                                `利回り: ${point.y.toFixed(3)}%`,
+                                `日付: ${point.date}`
+                            ];
+                        }
+                    }
+                }
+            },
+            elements: { point: { radius: 4, hoverRadius: 8 } }
+        }
+    });
+}
+
+// 5つのカーブデータを管理
+let curveData = {};
+let currentFilters = { minYears: 0, maxYears: 50 };
+
+// カーブ更新
+async function updateYieldCurves() {
+    const selectedDates = [];
+    for (let i = 1; i <= 5; i++) {
+        const date = document.getElementById(`date${i}`).value;
+        if (date) selectedDates.push({ panel: i, date: date });
+    }
+    
+    if (selectedDates.length === 0) {
+        yieldChart.data.datasets = [];
+        yieldChart.update();
+        updateStats();
+        return;
+    }
+    
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('errorMessage').style.display = 'none';
+    
+    try {
+        curveData = {};
+        
+        // 並行でデータを取得
+        const promises = selectedDates.map(async (item) => {
+            try {
+                const response = await fetch(`/api/yield-curve/${item.date}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'success' && data.data) {
+                        curveData[item.panel] = {
+                            date: item.date,
+                            data: data.data
+                        };
+                    }
+                }
+            } catch (error) {
+                console.error(`Error loading ${item.date}:`, error);
+            }
+        });
+        
+        await Promise.all(promises);
+        
+        updateCharts();
+        updateStats();
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showError(`データの読み込みに失敗しました: ${error.message}`);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+// チャート更新
+function updateCharts() {
+    const datasets = [];
+    
+    Object.keys(curveData).forEach(panel => {
+        const curve = curveData[panel];
+        const filteredData = curve.data.filter(d => 
+            d.maturity_years >= currentFilters.minYears && 
+            d.maturity_years <= currentFilters.maxYears
+        );
+        
+        if (filteredData.length > 0) {
+            const color = curveColors[panel - 1];
+            datasets.push({
+                label: `${curve.date} (${filteredData.length}件)`,
+                data: filteredData.map(d => ({
+                    x: d.maturity_years,
+                    y: d.yield_rate,
+                    bond_name: d.bond_name,
+                    date: curve.date
+                })),
+                backgroundColor: color,
+                borderColor: color,
+                pointRadius: 4,
+                showLine: false
+            });
+        }
+    });
+    
+    yieldChart.data.datasets = datasets;
+    yieldChart.update();
+}
+
+// 統計更新
+function updateStats() {
+    const activeCurves = Object.keys(curveData).length;
+    let totalPoints = 0;
+    let allDates = [];
+    let allYields = [];
+    
+    Object.values(curveData).forEach(curve => {
+        const filtered = curve.data.filter(d => 
+            d.maturity_years >= currentFilters.minYears && 
+            d.maturity_years <= currentFilters.maxYears
+        );
+        totalPoints += filtered.length;
+        allDates.push(curve.date);
+        allYields.push(...filtered.map(d => d.yield_rate));
+    });
+    
+    document.getElementById('activeCurves').textContent = activeCurves;
+    document.getElementById('totalPoints').textContent = totalPoints;
+    
+    if (allDates.length > 0) {
+        const sortedDates = allDates.sort();
+        document.getElementById('dateRange').textContent = 
+            allDates.length > 1 ? `${sortedDates[0]} - ${sortedDates[sortedDates.length-1]}` : sortedDates[0];
+    } else {
+        document.getElementById('dateRange').textContent = '-';
+    }
+    
+    if (allYields.length > 0) {
+        const minYield = Math.min(...allYields);
+        const maxYield = Math.max(...allYields);
+        document.getElementById('yieldSpread').textContent = `${(maxYield - minYield).toFixed(3)}%`;
+    } else {
+        document.getElementById('yieldSpread').textContent = '-';
+    }
+}
+
+// PCA実行
+async function runPCA() {
+    const days = parseInt(document.getElementById('pcaDays').value);
+    const components = parseInt(document.getElementById('pcaComponents').value);
+    const splinePoints = parseInt(document.getElementById('splinePoints').value);
+    
+    document.getElementById('loading').style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/pca-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                days: days,
+                components: components,
+                spline_points: splinePoints
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status === 'success') {
+                displayPCAResults(data);
+            } else {
+                showError(`PCA分析エラー: ${data.error}`);
+            }
+        } else {
+            showError('PCA分析リクエストに失敗しました');
+        }
+        
+    } catch (error) {
+        console.error('PCA Error:', error);
+        showError(`PCA分析に失敗しました: ${error.message}`);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+// PCA結果表示
+function displayPCAResults(data) {
+    document.getElementById('pcaCharts').style.display = 'grid';
+    document.getElementById('pcaStats').style.display = 'grid';
+    
+    // 主成分ベクトルチャート
+    const vectorsCtx = document.getElementById('pcaVectorsChart').getContext('2d');
+    if (pcaVectorsChart) pcaVectorsChart.destroy();
+    
+    pcaVectorsChart = new Chart(vectorsCtx, {
+        type: 'line',
+        data: {
+            labels: data.maturity_grid,
+            datasets: data.principal_components.map((component, i) => ({
+                label: `第${i+1}主成分 (${data.explained_variance[i].toFixed(1)}%)`,
+                data: component,
+                borderColor: curveColors[i],
+                backgroundColor: curveColors[i] + '20',
+                tension: 0.4
+            }))
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: '残存年数' } },
+                y: { title: { display: true, text: '主成分ベクトル値' } }
+            },
+            plugins: { title: { display: true, text: '主成分ベクトル' } }
+        }
+    });
+    
+    // 差分チャート
+    const diffCtx = document.getElementById('pcaDiffChart').getContext('2d');
+    if (pcaDiffChart) pcaDiffChart.destroy();
+    
+    pcaDiffChart = new Chart(diffCtx, {
+        type: 'line',
+        data: {
+            labels: data.maturity_grid,
+            datasets: [{
+                label: '復元誤差',
+                data: data.reconstruction_error,
+                borderColor: '#e74c3c',
+                backgroundColor: '#e74c3c20',
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: '残存年数' } },
+                y: { title: { display: true, text: '誤差 (%)' } }
+            },
+            plugins: { title: { display: true, text: '復元誤差プロファイル' } }
+        }
+    });
+    
+    // 統計更新
+    document.getElementById('pcaVariance').textContent = 
+        `${data.explained_variance.reduce((a, b) => a + b, 0).toFixed(1)}%`;
+    document.getElementById('pcaError').textContent = 
+        `${data.mean_reconstruction_error.toFixed(4)}%`;
+    document.getElementById('pcaSamples').textContent = data.sample_count;
+}
+
+// エラー表示
+function showError(message) {
+    document.getElementById('errorText').textContent = message;
+    document.getElementById('errorMessage').style.display = 'block';
+}
+
+// イベントリスナー設定
+document.addEventListener('DOMContentLoaded', function() {
+    initializeYieldChart();
+    
+    // カーブ更新ボタン
+    document.getElementById('updateCurves').addEventListener('click', updateYieldCurves);
+    
+    // 全クリアボタン
+    document.getElementById('clearAll').addEventListener('click', function() {
+        for (let i = 1; i <= 5; i++) {
+            document.getElementById(`date${i}`).value = '';
+        }
+        curveData = {};
+        yieldChart.data.datasets = [];
+        yieldChart.update();
+        updateStats();
+    });
+    
+    // フィルタ変更
+    document.getElementById('minYears').addEventListener('change', function() {
+        currentFilters.minYears = parseFloat(this.value) || 0;
+        updateCharts();
+        updateStats();
+    });
+    
+    document.getElementById('maxYears').addEventListener('change', function() {
+        currentFilters.maxYears = parseFloat(this.value) || 50;
+        updateCharts();
+        updateStats();
+    });
+    
+    // PCA実行ボタン
+    document.getElementById('runPCA').addEventListener('click', runPCA);
+    
+    // 初回データロード
+    updateYieldCurves();
+});
+</script>
+{% endblock %}

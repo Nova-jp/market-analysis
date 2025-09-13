@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+
+{% block title %}ダッシュボード - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- サイドバー -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-calendar-alt me-2"></i>日付選択
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="dateSelect" class="form-label">分析対象日:</label>
+                    <select class="form-select" id="dateSelect">
+                        <option value="">日付を選択...</option>
+                        {% for date in available_dates[:30] %}
+                        <option value="{{ date }}" {% if loop.first %}selected{% endif %}>
+                            {{ date }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <button class="btn btn-primary w-100" id="loadData">
+                        <i class="fas fa-sync me-2"></i>データ読み込み
+                    </button>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>クイックアクセス:</h6>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[0] if available_dates else '' }}')">
+                            最新日 ({{ available_dates[0] if available_dates else 'N/A' }})
+                        </button>
+                        {% if available_dates|length > 1 %}
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[1] }}')">
+                            前日 ({{ available_dates[1] }})
+                        </button>
+                        {% endif %}
+                        {% if available_dates|length > 7 %}
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[7] }}')">
+                            1週間前 ({{ available_dates[7] }})
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="alert alert-info" role="alert">
+                    <small>
+                        <i class="fas fa-info-circle me-1"></i>
+                        利用可能データ: {{ available_dates|length }}日分
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 統計サマリー -->
+        <div class="card mt-3" id="statsSummary" style="display: none;">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>統計サマリー
+                </h6>
+            </div>
+            <div class="card-body">
+                <div id="statsContent">
+                    <!-- JavaScript で動的に生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- メインコンテンツ -->
+    <div class="col-md-9">
+        <!-- ローディング表示 -->
+        <div class="card" id="loadingCard">
+            <div class="card-body text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3">データを読み込んでいます...</p>
+            </div>
+        </div>
+        
+        <!-- メトリクスカード -->
+        <div class="row mb-4" id="metricsCards" style="display: none;">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">債券数</h6>
+                                <h4 id="bondCount">-</h4>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-chart-pie fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">平均利回り</h6>
+                                <h4 id="avgYield">-</h4>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-percentage fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">利回り範囲</h6>
+                                <h4 id="yieldRange">-</h4>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-arrows-alt-h fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">平均満期</h6>
+                                <h4 id="avgMaturity">-</h4>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-clock fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- イールドカーブチャート -->
+        <div class="card" id="chartCard" style="display: none;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-chart-line me-2"></i>イールドカーブ
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="downloadChart">
+                        <i class="fas fa-download me-1"></i>ダウンロード
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="yieldCurveChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+        
+        <!-- 期間別統計 -->
+        <div class="row mt-4" id="periodStats" style="display: none;">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clock text-primary fa-2x mb-2"></i>
+                        <h6>短期（2年以下）</h6>
+                        <h4 id="shortTermCount">-</h4>
+                        <p class="text-muted">平均利回り: <span id="shortTermYield">-</span></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-calendar text-success fa-2x mb-2"></i>
+                        <h6>中期（2-10年）</h6>
+                        <h4 id="mediumTermCount">-</h4>
+                        <p class="text-muted">平均利回り: <span id="mediumTermYield">-</span></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-history text-info fa-2x mb-2"></i>
+                        <h6>長期（10年超）</h6>
+                        <h4 id="longTermCount">-</h4>
+                        <p class="text-muted">平均利回り: <span id="longTermYield">-</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 初期メッセージ -->
+        <div class="card" id="welcomeCard">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-chart-line fa-3x text-primary mb-3"></i>
+                <h4>日本国債イールドカーブ分析</h4>
+                <p class="text-muted">左のサイドバーから分析対象日を選択してください。</p>
+                <p class="small text-muted">
+                    データソース: 日本証券業協会 (JSDA)<br>
+                    利用可能データ: {{ available_dates|length }}日分
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentChart = null;
+
+// 日付選択関数
+function selectDate(date) {
+    document.getElementById('dateSelect').value = date;
+}
+
+// データ読み込み関数
+async function loadYieldCurveData() {
+    const selectedDate = document.getElementById('dateSelect').value;
+    
+    if (!selectedDate) {
+        alert('日付を選択してください');
+        return;
+    }
+    
+    // UI状態の更新
+    showLoading();
+    
+    try {
+        const response = await axios.get(`/api/yield-curve/${selectedDate}`);
+        const data = response.data;
+        
+        if (data.success) {
+            updateMetrics(data);
+            updateChart(data.chart_data, selectedDate);
+            updatePeriodStats(data.period_stats);
+            updateStats(data.stats);
+            hideLoading();
+        } else {
+            throw new Error(data.error);
+        }
+        
+    } catch (error) {
+        console.error('データ読み込みエラー:', error);
+        alert('データの読み込みに失敗しました: ' + error.message);
+        hideLoading();
+    }
+}
+
+// UIの状態管理
+function showLoading() {
+    document.getElementById('loadingCard').style.display = 'block';
+    document.getElementById('welcomeCard').style.display = 'none';
+    document.getElementById('chartCard').style.display = 'none';
+    document.getElementById('metricsCards').style.display = 'none';
+    document.getElementById('periodStats').style.display = 'none';
+    document.getElementById('statsSummary').style.display = 'none';
+}
+
+function hideLoading() {
+    document.getElementById('loadingCard').style.display = 'none';
+    document.getElementById('welcomeCard').style.display = 'none';
+    document.getElementById('chartCard').style.display = 'block';
+    document.getElementById('metricsCards').style.display = 'flex';
+    document.getElementById('periodStats').style.display = 'flex';
+    document.getElementById('statsSummary').style.display = 'block';
+}
+
+// メトリクスの更新
+function updateMetrics(data) {
+    document.getElementById('bondCount').textContent = data.bond_count + '銘柄';
+    document.getElementById('avgYield').textContent = data.stats.yield_stats.mean.toFixed(3) + '%';
+    document.getElementById('yieldRange').textContent = 
+        data.stats.yield_stats.min.toFixed(3) + '% - ' + data.stats.yield_stats.max.toFixed(3) + '%';
+    document.getElementById('avgMaturity').textContent = data.stats.maturity_stats.mean.toFixed(1) + '年';
+}
+
+// チャートの更新
+function updateChart(chartData, date) {
+    const ctx = document.getElementById('yieldCurveChart').getContext('2d');
+    
+    // 既存のチャートを破棄
+    if (currentChart) {
+        currentChart.destroy();
+    }
+    
+    currentChart = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: `日本国債イールドカーブ - ${date}`
+                },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            const point = context.raw;
+                            return [
+                                `債券名: ${point.bond_name}`,
+                                `クーポン: ${point.coupon_rate}%`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: '満期までの年数'
+                    },
+                    type: 'linear',
+                    position: 'bottom'
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: '利回り (%)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 期間別統計の更新
+function updatePeriodStats(periodStats) {
+    document.getElementById('shortTermCount').textContent = periodStats.short_term.count + '銘柄';
+    document.getElementById('shortTermYield').textContent = 
+        periodStats.short_term.avg_yield ? periodStats.short_term.avg_yield.toFixed(3) + '%' : 'N/A';
+        
+    document.getElementById('mediumTermCount').textContent = periodStats.medium_term.count + '銘柄';
+    document.getElementById('mediumTermYield').textContent = 
+        periodStats.medium_term.avg_yield ? periodStats.medium_term.avg_yield.toFixed(3) + '%' : 'N/A';
+        
+    document.getElementById('longTermCount').textContent = periodStats.long_term.count + '銘柄';
+    document.getElementById('longTermYield').textContent = 
+        periodStats.long_term.avg_yield ? periodStats.long_term.avg_yield.toFixed(3) + '%' : 'N/A';
+}
+
+// 統計サマリーの更新
+function updateStats(stats) {
+    const content = `
+        <div class="mb-2">
+            <strong>分析日:</strong> ${stats.date}
+        </div>
+        <div class="mb-2">
+            <strong>債券総数:</strong> ${stats.total_bonds}銘柄
+        </div>
+        <div class="mb-2">
+            <strong>利回り標準偏差:</strong> ${stats.yield_stats.std.toFixed(3)}%
+        </div>
+        <div class="mb-2">
+            <strong>満期範囲:</strong> ${stats.maturity_stats.min.toFixed(1)} - ${stats.maturity_stats.max.toFixed(1)}年
+        </div>
+    `;
+    document.getElementById('statsContent').innerHTML = content;
+}
+
+// イベントリスナー
+document.getElementById('loadData').addEventListener('click', loadYieldCurveData);
+
+// ページ読み込み時に最新データを自動読み込み
+document.addEventListener('DOMContentLoaded', function() {
+    {% if available_dates %}
+    selectDate('{{ available_dates[0] }}');
+    setTimeout(loadYieldCurveData, 500);
+    {% endif %}
+});
+
+// チャートダウンロード機能
+document.getElementById('downloadChart').addEventListener('click', function() {
+    if (currentChart) {
+        const link = document.createElement('a');
+        link.download = `yield-curve-${document.getElementById('dateSelect').value}.png`;
+        link.href = currentChart.toBase64Image();
+        link.click();
+    }
+});
+</script>
+{% endblock %}

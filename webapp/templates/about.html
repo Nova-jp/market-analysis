@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}システムについて - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header text-center">
+                <h4 class="card-title mb-0">
+                    <i class="fas fa-info-circle text-primary me-2"></i>
+                    Market Analytics システムについて
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <i class="fas fa-chart-line fa-4x text-primary mb-3"></i>
+                    <h5>日本国債市場分析システム</h5>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-database text-success me-2"></i>データソース</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li><strong>日本証券業協会 (JSDA)</strong></li>
+                            <li>国債・金利スワップ市場データ</li>
+                            <li>毎日17:30頃更新</li>
+                            <li>2002年からの履歴データ</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cogs text-info me-2"></i>技術スタック</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li><strong>Backend:</strong> FastAPI + Python</li>
+                            <li><strong>Frontend:</strong> HTML + JavaScript</li>
+                            <li><strong>Database:</strong> Supabase (PostgreSQL)</li>
+                            <li><strong>Charts:</strong> Chart.js</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <i class="fas fa-chart-area fa-2x text-primary mb-2"></i>
+                                <h6>イールドカーブ分析</h6>
+                                <p class="small text-muted">満期と利回りの関係を可視化</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <i class="fas fa-clock fa-2x text-success mb-2"></i>
+                                <h6>時系列分析</h6>
+                                <p class="small text-muted">過去データの時系列推移</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <i class="fas fa-chart-bar fa-2x text-info mb-2"></i>
+                                <h6>統計分析</h6>
+                                <p class="small text-muted">期間別統計・基本統計量</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-exclamation-triangle text-warning me-2"></i>免責事項</h6>
+                        <p class="small text-muted">
+                            本システムは教育・研究目的で作成されています。
+                            投資判断は自己責任で行ってください。
+                            データの正確性について保証するものではありません。
+                        </p>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-envelope text-primary me-2"></i>お問い合わせ</h6>
+                        <p class="small text-muted">
+                            システムに関するお問い合わせやフィードバックは
+                            開発者までご連絡ください。
+                        </p>
+                        <p class="small">
+                            <i class="fas fa-code me-1"></i>
+                            <a href="https://github.com" target="_blank">GitHub Repository</a>
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="/" class="btn btn-primary">
+                        <i class="fas fa-arrow-left me-2"></i>ダッシュボードに戻る
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- システム情報 -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-server text-secondary me-2"></i>システム情報
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong>バージョン:</strong><br>
+                        <span class="text-muted">v1.0.0</span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>最終更新:</strong><br>
+                        <span class="text-muted">2025年9月</span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>データ範囲:</strong><br>
+                        <span class="text-muted">2002年〜現在</span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>更新頻度:</strong><br>
+                        <span class="text-muted">日次</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
