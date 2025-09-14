@@ -506,3 +506,60 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"日付取得エラー: {e}")
             return []
+    
+    def fetch_data(self, query: str, params: tuple = None) -> List[tuple]:
+        """
+        SQL風のクエリをSupabase REST APIに変換してデータを取得
+        主成分分析用のデータ取得メソッド
+        
+        Args:
+            query (str): SQL風のクエリ文字列（簡易的な解析）
+            params (tuple): パラメータ（start_date, end_date）
+        
+        Returns:
+            List[tuple]: 取得されたデータのタプルリスト
+        """
+        try:
+            if params and len(params) >= 2:
+                start_date, end_date = params[0], params[1]
+                
+                # Supabase REST APIでデータ取得
+                url = f'{self.supabase_url}/rest/v1/clean_bond_data'
+                
+                # URLパラメータを手動で構築
+                query_params = [
+                    f'select=trade_date,maturity_years,ave_compound_yield,bond_name',
+                    f'trade_date=gte.{start_date}',
+                    f'trade_date=lte.{end_date}',
+                    f'maturity_years=gte.0.2',
+                    f'ave_compound_yield=not.is.null',
+                    f'order=trade_date,maturity_years'
+                ]
+                
+                full_url = f"{url}?{'&'.join(query_params)}"
+                response = requests.get(full_url, headers=self.headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # タプルのリストに変換
+                    result = []
+                    for item in data:
+                        result.append((
+                            item['trade_date'],
+                            item['maturity_years'],
+                            item['ave_compound_yield'],
+                            item['bond_name']
+                        ))
+                    return result
+                else:
+                    self.logger.error(f"データ取得失敗: {response.status_code}")
+                    self.logger.error(f"URL: {full_url}")
+                    self.logger.error(f"Response: {response.text}")
+                    return []
+            else:
+                self.logger.error("パラメータが不足しています")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"fetch_data エラー: {e}")
+            return []
