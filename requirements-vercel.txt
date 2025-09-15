@@ -1,0 +1,7 @@
+# Vercel deployment requirements (optimized)
+fastapi>=0.100.0
+uvicorn>=0.23.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+jinja2>=3.1.0
+aiofiles>=0.23.0

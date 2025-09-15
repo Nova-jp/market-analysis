@@ -84,6 +84,11 @@
                         </h6>
                     </div>
                     <div class="card-body">
+                        <!-- 固定メッセージエリア（レイアウトシフト防止） -->
+                        <div id="messageContainer" style="min-height: 58px; margin-bottom: 10px;">
+                            <!-- メッセージがここに表示される -->
+                        </div>
+
                         <!-- 日付直接入力 -->
                         <div class="date-input-section">
                             <label class="form-label fw-bold">日付を直接入力:</label>
@@ -527,7 +532,7 @@
             yieldChart.update();
         }
 
-        // メッセージ表示
+        // メッセージ表示（レイアウトシフト防止）
         function showMessage(message, type = 'info') {
             // 既存のアラートを削除
             const existingAlert = document.querySelector('.alert-temp');
@@ -536,15 +541,15 @@
             }
 
             const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type} alert-dismissible alert-temp`;
+            alertDiv.className = `alert alert-${type} alert-dismissible alert-temp mb-0`;
             alertDiv.innerHTML = `
                 ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
 
-            // カードの上に挿入
-            const cardBody = document.querySelector('.card-body');
-            cardBody.insertBefore(alertDiv, cardBody.firstChild);
+            // 固定メッセージコンテナに挿入
+            const messageContainer = document.getElementById('messageContainer');
+            messageContainer.appendChild(alertDiv);
 
             // 3秒後に自動削除
             setTimeout(() => {
