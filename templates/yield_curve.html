@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>イールドカーブ比較 - Market Analytics</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .date-chip {
+            display: inline-block;
+            margin: 3px;
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            position: relative;
+        }
+        .date-chip .remove-btn {
+            margin-left: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .date-chip .remove-btn:hover {
+            color: #ffcccc;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            margin-top: 20px;
+        }
+        .quick-btn {
+            margin: 2px;
+        }
+        .date-input-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .filter-section {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .range-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .range-input {
+            width: 80px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-3">
+        <!-- ヘッダー -->
+        <div class="row mb-3">
+            <div class="col">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item">
+                            <a href="/" class="text-decoration-none">
+                                <i class="fas fa-home"></i> Home
+                            </a>
+                        </li>
+                        <li class="breadcrumb-item active">イールドカーブ比較</li>
+                    </ol>
+                </nav>
+                <h2><i class="fas fa-chart-area me-2"></i>イールドカーブ比較</h2>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 左サイド: 日付選択 -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-calendar-alt me-2"></i>日付選択
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- 日付直接入力 -->
+                        <div class="date-input-section">
+                            <label class="form-label fw-bold">日付を直接入力:</label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    id="dateInput"
+                                    class="form-control"
+                                    placeholder="2025-09-05"
+                                    maxlength="10"
+                                >
+                                <button class="btn btn-primary" id="addDateBtn" type="button">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                YYYY-MM-DD 形式で入力してください
+                            </small>
+                        </div>
+
+                        <!-- クイック選択 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">クイック選択:</label>
+                            <div id="quickButtons">
+                                <div class="text-center">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">読み込み中...</span>
+                                    </div>
+                                    <small class="d-block text-muted mt-1">日付を読み込み中...</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 年限範囲フィルター -->
+                        <div class="filter-section">
+                            <label class="form-label fw-bold">年限範囲フィルター:</label>
+                            <div class="range-input-group">
+                                <input type="number" id="minMaturity" class="form-control range-input"
+                                       placeholder="最小" min="0" max="50" step="0.1" value="">
+                                <span>〜</span>
+                                <input type="number" id="maxMaturity" class="form-control range-input"
+                                       placeholder="最大" min="0" max="50" step="0.1" value="">
+                                <span>年</span>
+                                <button id="applyFilter" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-filter"></i>
+                                </button>
+                                <button id="clearFilter" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">
+                                例: 20〜30年の範囲を表示
+                            </small>
+                        </div>
+
+                        <!-- 選択された日付 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">選択中の日付 (<span id="dateCount">0</span>/20):</label>
+                            <div id="selectedDates">
+                                <small class="text-muted">日付を選択してください</small>
+                            </div>
+                        </div>
+
+                        <!-- 操作ボタン -->
+                        <div class="d-grid gap-2">
+                            <button id="clearAllBtn" class="btn btn-outline-danger btn-sm">
+                                <i class="fas fa-trash me-1"></i>全て削除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 統計情報 -->
+                <div class="card mt-3" id="statsCard" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-bar me-2"></i>統計情報
+                        </h6>
+                    </div>
+                    <div class="card-body" id="statsContent">
+                        <!-- 動的に生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右サイド: グラフ表示 -->
+            <div class="col-md-9">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="yieldChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // グローバル変数
+        let selectedDates = [];
+        let yieldChart = null;
+        let maturityFilter = { min: null, max: null };
+        const MAX_DATES = 20;
+        const colors = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+            '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
+            '#9966FF', '#36A2EB', '#FFCD56', '#FF9F40', '#4BC0C0',
+            '#C9CBCF', '#FF6384', '#36A2EB', '#FFCE56', '#9966FF'
+        ];
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            initChart();
+            setupEventListeners();
+            loadQuickDates();
+        });
+
+        // グラフ初期化
+        function initChart() {
+            const ctx = document.getElementById('yieldChart').getContext('2d');
+            yieldChart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {
+                                display: true,
+                                text: 'Maturity (Years)',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Yield Rate (%)',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Yield Curve Comparison'
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+        }
+
+        // イベントリスナー設定
+        function setupEventListeners() {
+            const dateInput = document.getElementById('dateInput');
+            const addDateBtn = document.getElementById('addDateBtn');
+            const clearAllBtn = document.getElementById('clearAllBtn');
+
+            // 日付入力フィールドのキー入力制御
+            dateInput.addEventListener('keydown', function(e) {
+                // 許可するキー: 数字、ハイフン、制御キー
+                const allowedKeys = [
+                    'Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight',
+                    'ArrowUp', 'ArrowDown', 'Home', 'End'
+                ];
+
+                const isCtrlCmd = e.ctrlKey || e.metaKey;
+                const isAllowedCtrl = isCtrlCmd && ['a', 'c', 'v', 'x'].includes(e.key);
+                const isNumber = /^[0-9]$/.test(e.key);
+                const isHyphen = e.key === '-';
+
+                if (!allowedKeys.includes(e.key) && !isAllowedCtrl && !isNumber && !isHyphen) {
+                    e.preventDefault();
+                }
+            });
+
+            // Enterキーで日付追加
+            dateInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    addDateFromInput();
+                }
+            });
+
+            // 追加ボタン
+            addDateBtn.addEventListener('click', addDateFromInput);
+
+            // 全削除ボタン
+            clearAllBtn.addEventListener('click', function() {
+                selectedDates = [];
+                updateDisplay();
+                updateChart();
+            });
+
+            // 年限フィルター
+            const applyFilterBtn = document.getElementById('applyFilter');
+            const clearFilterBtn = document.getElementById('clearFilter');
+            const minMaturityInput = document.getElementById('minMaturity');
+            const maxMaturityInput = document.getElementById('maxMaturity');
+
+            applyFilterBtn.addEventListener('click', function() {
+                const minVal = parseFloat(minMaturityInput.value);
+                const maxVal = parseFloat(maxMaturityInput.value);
+
+                maturityFilter.min = isNaN(minVal) ? null : minVal;
+                maturityFilter.max = isNaN(maxVal) ? null : maxVal;
+
+                if (maturityFilter.min !== null && maturityFilter.max !== null &&
+                    maturityFilter.min > maturityFilter.max) {
+                    showMessage('最小値は最大値より小さくしてください', 'warning');
+                    return;
+                }
+
+                showMessage('年限フィルターを適用しました', 'success');
+                updateChart();
+            });
+
+            clearFilterBtn.addEventListener('click', function() {
+                maturityFilter.min = null;
+                maturityFilter.max = null;
+                minMaturityInput.value = '';
+                maxMaturityInput.value = '';
+                showMessage('年限フィルターをクリアしました', 'info');
+                updateChart();
+            });
+        }
+
+        // 入力欄から日付を追加
+        function addDateFromInput() {
+            const dateInput = document.getElementById('dateInput');
+            const date = dateInput.value.trim();
+
+            if (!date) {
+                showMessage('日付を入力してください', 'warning');
+                return;
+            }
+
+            if (!isValidDateFormat(date)) {
+                showMessage('正しい日付形式で入力してください (YYYY-MM-DD)', 'warning');
+                return;
+            }
+
+            // ユーザー入力フラグをtrueにして追加
+            addDate(date, true);
+
+            // 成功した場合のみ入力欄をクリア（失敗時は loadYieldData で日付が戻される）
+            if (selectedDates.includes(date)) {
+                dateInput.value = '';
+            }
+        }
+
+        // 日付形式バリデーション
+        function isValidDateFormat(dateStr) {
+            const regex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!regex.test(dateStr)) return false;
+
+            const date = new Date(dateStr);
+            return date instanceof Date && !isNaN(date);
+        }
+
+        // 日付追加
+        function addDate(date, fromUserInput = false) {
+            if (selectedDates.length >= MAX_DATES) {
+                showMessage(`最大${MAX_DATES}個まで選択できます`, 'warning');
+                return;
+            }
+
+            if (selectedDates.includes(date)) {
+                showMessage('この日付は既に選択されています', 'info');
+                return;
+            }
+
+            selectedDates.push(date);
+            updateDisplay();
+            loadYieldData(date, fromUserInput);
+        }
+
+        // 日付削除
+        function removeDate(date) {
+            selectedDates = selectedDates.filter(d => d !== date);
+            updateDisplay();
+            updateChart();
+        }
+
+        // 表示更新
+        function updateDisplay() {
+            const container = document.getElementById('selectedDates');
+            const countElement = document.getElementById('dateCount');
+
+            countElement.textContent = selectedDates.length;
+
+            if (selectedDates.length === 0) {
+                container.innerHTML = '<small class="text-muted">日付を選択してください</small>';
+                return;
+            }
+
+            container.innerHTML = selectedDates.map(date => `
+                <span class="date-chip">
+                    ${date}
+                    <span class="remove-btn" onclick="removeDate('${date}')">&times;</span>
+                </span>
+            `).join('');
+        }
+
+        // クイック日付読み込み
+        async function loadQuickDates() {
+            try {
+                const response = await fetch('/api/quick-dates');
+                const dates = await response.json();
+
+                const container = document.getElementById('quickButtons');
+                container.innerHTML = '';
+
+                const quickDates = [
+                    { key: 'latest', label: '最新日', class: 'btn-primary' },
+                    { key: 'previous', label: '前日', class: 'btn-secondary' },
+                    { key: 'five_days_ago', label: '5日前', class: 'btn-secondary' },
+                    { key: 'month_ago', label: '1ヶ月前', class: 'btn-secondary' }
+                ];
+
+                quickDates.forEach(item => {
+                    if (dates[item.key]) {
+                        const btn = document.createElement('button');
+                        btn.className = `btn ${item.class} btn-sm quick-btn`;
+                        btn.textContent = `${item.label} (${dates[item.key]})`;
+                        btn.onclick = () => addDate(dates[item.key]);
+                        container.appendChild(btn);
+                    }
+                });
+
+                if (container.children.length === 0) {
+                    container.innerHTML = '<small class="text-muted">クイック選択データを読み込めませんでした</small>';
+                }
+
+            } catch (error) {
+                console.error('クイック日付読み込みエラー:', error);
+                document.getElementById('quickButtons').innerHTML =
+                    '<small class="text-danger">日付読み込みに失敗しました</small>';
+            }
+        }
+
+        // イールドデータ取得
+        async function loadYieldData(date, fromUserInput = false) {
+            try {
+                const response = await fetch(`/api/yield-data/${date}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.error || !data.data || data.data.length === 0) {
+                    showMessage(`${date} のデータが見つかりません`, 'warning');
+                    removeDate(date);
+
+                    // ユーザー入力の場合は入力欄に日付を戻す
+                    if (fromUserInput) {
+                        document.getElementById('dateInput').value = date;
+                    }
+                    return;
+                }
+
+                showMessage(`${date} のデータを取得しました (${data.data.length}件)`, 'success');
+                updateChart();
+
+            } catch (error) {
+                console.error(`${date} データ取得エラー:`, error);
+                showMessage(`${date} のデータ取得に失敗しました`, 'danger');
+                removeDate(date);
+
+                // ユーザー入力の場合は入力欄に日付を戻す
+                if (fromUserInput) {
+                    document.getElementById('dateInput').value = date;
+                }
+            }
+        }
+
+        // グラフ更新
+        async function updateChart() {
+            yieldChart.data.datasets = [];
+
+            for (let i = 0; i < selectedDates.length; i++) {
+                const date = selectedDates[i];
+
+                try {
+                    const response = await fetch(`/api/yield-data/${date}`);
+                    const data = await response.json();
+
+                    if (!data.error && data.data && data.data.length > 0) {
+                        // 年限フィルターを適用
+                        let filteredData = data.data;
+
+                        if (maturityFilter.min !== null || maturityFilter.max !== null) {
+                            filteredData = data.data.filter(point => {
+                                const maturity = point.maturity;
+
+                                if (maturityFilter.min !== null && maturity < maturityFilter.min) {
+                                    return false;
+                                }
+                                if (maturityFilter.max !== null && maturity > maturityFilter.max) {
+                                    return false;
+                                }
+                                return true;
+                            });
+                        }
+
+                        if (filteredData.length > 0) {
+                            yieldChart.data.datasets.push({
+                                label: date,
+                                data: filteredData.map(point => ({
+                                    x: point.maturity,
+                                    y: point.yield
+                                })),
+                                borderColor: colors[i % colors.length],  // 20色をループ
+                                backgroundColor: colors[i % colors.length] + '20',
+                                fill: false,
+                                tension: 0.1,
+                                pointRadius: 2
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error(`${date} グラフデータ処理エラー:`, error);
+                }
+            }
+
+            yieldChart.update();
+        }
+
+        // メッセージ表示
+        function showMessage(message, type = 'info') {
+            // 既存のアラートを削除
+            const existingAlert = document.querySelector('.alert-temp');
+            if (existingAlert) {
+                existingAlert.remove();
+            }
+
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible alert-temp`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+
+            // カードの上に挿入
+            const cardBody = document.querySelector('.card-body');
+            cardBody.insertBefore(alertDiv, cardBody.firstChild);
+
+            // 3秒後に自動削除
+            setTimeout(() => {
+                if (alertDiv && alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
