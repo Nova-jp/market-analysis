@@ -15,11 +15,11 @@ COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションコードをコピー
-COPY app/ app/              # Webアプリ + API + サービス
-COPY src/ src/              # 共通データ処理関数
-COPY templates/ templates/  # HTMLテンプレート
-COPY static/ static/        # CSS, JS, 画像
-COPY data_files/ data_files/  # 設定ファイル
+COPY app/ app/
+COPY src/ src/
+COPY templates/ templates/
+COPY static/ static/
+COPY data_files/ data_files/
 
 # 環境変数（Cloud Runで上書き可能）
 ENV PYTHONUNBUFFERED=1
