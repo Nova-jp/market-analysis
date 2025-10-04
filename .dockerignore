@@ -1,0 +1,41 @@
+# Minimal .dockerignore for Cloud Run
+# Only exclude what's absolutely not needed
+
+# Development
+.env
+.env.local
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Logs
+*.log
+logs/
+
+# Not needed for Cloud Run (use src/, app/ instead)
+deployments/
+data/
+notebooks/
+scripts/
+frontend/
+webapp/
+analysis/
+legacy/
+
+# Docs
+*.md
+docs/
+tests/
+
+# OS
+.DS_Store

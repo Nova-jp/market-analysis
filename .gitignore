@@ -81,6 +81,11 @@ temp/
 data/raw/
 data/processed/
 data/temp/
+data/external/
+
+# Jupyter Notebook outputs
+notebooks/**/*.html
+notebooks/**/*.pdf
 
 # 一時的なデータファイル
 data_files/collected_*.json
@@ -119,7 +124,16 @@ PROJECT_STRUCTURE.md
 SESSION_STATUS.md
 README_*.md
 
+# 旧ディレクトリ構造（移行後削除予定）
+frontend/
+webapp/
+scripts/daily_collector.py
+analysis/simple_pca_demo.py
+Dockerfile.old
+requirements-*.txt
+
 # 保持するファイル（例外）
 !data_files/target_dates_latest.json
 !data_files/available_dates_*.json
 !CLAUDE.md
+.vercel
