@@ -11,15 +11,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 依存関係ファイルを先にコピー（キャッシュ最適化）
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションコードをコピー
-COPY app/ /app/app/              # Webアプリ + API + サービス
-COPY src/ /app/src/              # 共通データ処理関数
-COPY templates/ /app/templates/  # HTMLテンプレート
-COPY static/ /app/static/        # CSS, JS, 画像
-COPY data_files/ /app/data_files/  # 設定ファイル
+COPY app/ app/              # Webアプリ + API + サービス
+COPY src/ src/              # 共通データ処理関数
+COPY templates/ templates/  # HTMLテンプレート
+COPY static/ static/        # CSS, JS, 画像
+COPY data_files/ data_files/  # 設定ファイル
 
 # 環境変数（Cloud Runで上書き可能）
 ENV PYTHONUNBUFFERED=1
