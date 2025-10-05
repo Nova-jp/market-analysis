@@ -13,6 +13,10 @@ from datetime import datetime, date, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
+# 文字化け対策: 英語フォント設定
+plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.size'] = 10
+
 def generate_sample_yield_data():
     """サンプルのイールドカーブデータを生成"""
     
@@ -120,9 +124,9 @@ def plot_principal_components(pca_result):
         
         plt.plot(pca_result['common_maturities'], component, 
                 color=colors[i], linewidth=2, marker='o', markersize=4)
-        plt.title(f'PC{i+1} (Explained Variance: {pca_result["pca_model"].explained_variance_ratio_[i]:.1%})')
+        plt.title(f'PC{i+1} (Variance: {pca_result["pca_model"].explained_variance_ratio_[i]:.1%})')
         plt.xlabel('Maturity (Years)')
-        plt.ylabel('Principal Component Vector')
+        plt.ylabel('PC Vector')
         plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -183,14 +187,14 @@ def plot_reconstruction_comparison(reconstruction_result, pca_result, n_componen
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
     # 上段: 元のカーブと復元カーブの比較
-    ax1.plot(reconstruction_result['maturities'], reconstruction_result['original'], 
-            'b-', linewidth=2, label='元のカーブ (スプライン補間)')
-    ax1.plot(reconstruction_result['maturities'], reconstruction_result['reconstructed'], 
-            'r--', linewidth=2, label=f'復元カーブ (第{n_components_restore}主成分)')
-    
+    ax1.plot(reconstruction_result['maturities'], reconstruction_result['original'],
+            'b-', linewidth=2, label='Original Curve (Spline)')
+    ax1.plot(reconstruction_result['maturities'], reconstruction_result['reconstructed'],
+            'r--', linewidth=2, label=f'Reconstructed (PC1-{n_components_restore})')
+
     # 元の個別銘柄データもプロット
     if original_data is not None:
-        ax1.scatter(original_data['maturity_years'], original_data['yield_rate'], 
+        ax1.scatter(original_data['maturity_years'], original_data['yield_rate'],
                    c='black', s=50, alpha=0.7, label='Actual Bond Data', zorder=5)
     
     ax1.set_xlabel('Maturity (Years)')
@@ -224,11 +228,11 @@ def plot_reconstruction_comparison(reconstruction_result, pca_result, n_componen
         scatter = ax2.scatter(maturities, differences, c=differences, cmap='RdYlBu_r', 
                             s=60, alpha=0.8, edgecolors='black', linewidth=0.5)
         
-        # 大きな差分のみ注釈表示
+        # 大きな差分のみ注釈表示（英語ラベル）
         for i, (mat, diff, name) in enumerate(zip(maturities, differences, bond_names)):
             if abs(diff) > np.std(differences):
-                ax2.annotate(f'{name}\n{diff:.3f}%', 
-                           xy=(mat, diff), xytext=(5, 5), 
+                ax2.annotate(f'{mat:.1f}Y\n{diff:.3f}%',
+                           xy=(mat, diff), xytext=(5, 5),
                            textcoords='offset points', fontsize=8,
                            bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
     

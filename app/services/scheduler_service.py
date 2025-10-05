@@ -7,8 +7,8 @@ from typing import Dict, Any
 from datetime import datetime, timedelta
 import time
 
-from src.data.processors.bond_data_processor import BondDataProcessor
-from src.data.database.database_manager import DatabaseManager
+from data.processors.bond_data_processor import BondDataProcessor
+from data.utils.database_manager import DatabaseManager
 import jpholiday
 
 logger = logging.getLogger(__name__)

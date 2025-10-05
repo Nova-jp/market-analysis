@@ -13,16 +13,35 @@
                 </h6>
             </div>
             <div class="card-body">
+                <!-- 段階的日付選択 -->
                 <div class="mb-3">
-                    <label for="dateSelect" class="form-label">分析対象日:</label>
-                    <select class="form-select" id="dateSelect">
-                        <option value="">日付を選択...</option>
-                        {% for date in available_dates[:30] %}
-                        <option value="{{ date }}" {% if loop.first %}selected{% endif %}>
-                            {{ date }}
-                        </option>
-                        {% endfor %}
+                    <label for="yearSelect" class="form-label">年を選択:</label>
+                    <select class="form-select" id="yearSelect">
+                        <option value="">年を選択...</option>
                     </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="monthSelect" class="form-label">月を選択:</label>
+                    <select class="form-select" id="monthSelect" disabled>
+                        <option value="">月を選択...</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="daySelect" class="form-label">日を選択:</label>
+                    <select class="form-select" id="daySelect" disabled>
+                        <option value="">日を選択...</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <div class="alert alert-secondary" role="alert">
+                        <small id="selectedDateDisplay">
+                            <i class="fas fa-calendar-alt me-1"></i>
+                            選択された日付: <span id="finalSelectedDate">未選択</span>
+                        </small>
+                    </div>
                 </div>
                 
                 <div class="mb-3">
@@ -34,26 +53,22 @@
                 <div class="mb-3">
                     <h6>クイックアクセス:</h6>
                     <div class="d-grid gap-2">
-                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[0] if available_dates else '' }}')">
-                            最新日 ({{ available_dates[0] if available_dates else 'N/A' }})
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ latest_date }}')">
+                            最新日 ({{ latest_date or 'N/A' }})
                         </button>
-                        {% if available_dates|length > 1 %}
-                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[1] }}')">
-                            前日 ({{ available_dates[1] }})
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('2025-01-01')">
+                            2025年1月1日
                         </button>
-                        {% endif %}
-                        {% if available_dates|length > 7 %}
-                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('{{ available_dates[7] }}')">
-                            1週間前 ({{ available_dates[7] }})
+                        <button class="btn btn-outline-secondary btn-sm" onclick="selectDate('2024-01-01')">
+                            2024年1月1日
                         </button>
-                        {% endif %}
                     </div>
                 </div>
                 
                 <div class="alert alert-info" role="alert">
                     <small>
                         <i class="fas fa-info-circle me-1"></i>
-                        利用可能データ: {{ available_dates|length }}日分
+                        全期間データ利用可能（段階的選択）
                     </small>
                 </div>
             </div>
@@ -226,19 +241,176 @@
 <script>
 let currentChart = null;
 
-// 日付選択関数
+// 段階的日付選択システム
+let selectedYear = '';
+let selectedMonth = '';
+let selectedDay = '';
+
+// ページ読み込み時に年一覧を取得
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadAvailableYears();
+});
+
+// 年一覧を取得
+async function loadAvailableYears() {
+    try {
+        const response = await axios.get('/api/dates/years');
+        const data = response.data;
+
+        if (data.success) {
+            const yearSelect = document.getElementById('yearSelect');
+            yearSelect.innerHTML = '<option value="">年を選択...</option>';
+
+            data.years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                yearSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('年データ取得エラー:', error);
+    }
+}
+
+// 月一覧を取得
+async function loadAvailableMonths(year) {
+    try {
+        const response = await axios.get(`/api/dates/months/${year}`);
+        const data = response.data;
+
+        if (data.success) {
+            const monthSelect = document.getElementById('monthSelect');
+            monthSelect.innerHTML = '<option value="">月を選択...</option>';
+            monthSelect.disabled = false;
+
+            data.months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month;
+                option.textContent = month + '月';
+                monthSelect.appendChild(option);
+            });
+
+            // 日選択をリセット
+            document.getElementById('daySelect').innerHTML = '<option value="">日を選択...</option>';
+            document.getElementById('daySelect').disabled = true;
+            updateSelectedDateDisplay();
+        }
+    } catch (error) {
+        console.error('月データ取得エラー:', error);
+    }
+}
+
+// 日一覧を取得
+async function loadAvailableDays(year, month) {
+    try {
+        const response = await axios.get(`/api/dates/days/${year}/${month}`);
+        const data = response.data;
+
+        if (data.success) {
+            const daySelect = document.getElementById('daySelect');
+            daySelect.innerHTML = '<option value="">日を選択...</option>';
+            daySelect.disabled = false;
+
+            data.days.forEach(day => {
+                const option = document.createElement('option');
+                option.value = day;
+                option.textContent = day + '日';
+                daySelect.appendChild(option);
+            });
+
+            updateSelectedDateDisplay();
+        }
+    } catch (error) {
+        console.error('日データ取得エラー:', error);
+    }
+}
+
+// 選択された日付表示を更新
+function updateSelectedDateDisplay() {
+    const finalSelectedDate = document.getElementById('finalSelectedDate');
+
+    if (selectedYear && selectedMonth && selectedDay) {
+        const month = selectedMonth.padStart(2, '0');
+        const day = selectedDay.padStart(2, '0');
+        finalSelectedDate.textContent = `${selectedYear}-${month}-${day}`;
+    } else {
+        finalSelectedDate.textContent = '未選択';
+    }
+}
+
+// 年選択イベント
+document.getElementById('yearSelect').addEventListener('change', function() {
+    selectedYear = this.value;
+    selectedMonth = '';
+    selectedDay = '';
+
+    if (selectedYear) {
+        loadAvailableMonths(selectedYear);
+    } else {
+        // 月・日選択をリセット
+        document.getElementById('monthSelect').innerHTML = '<option value="">月を選択...</option>';
+        document.getElementById('monthSelect').disabled = true;
+        document.getElementById('daySelect').innerHTML = '<option value="">日を選択...</option>';
+        document.getElementById('daySelect').disabled = true;
+    }
+    updateSelectedDateDisplay();
+});
+
+// 月選択イベント
+document.getElementById('monthSelect').addEventListener('change', function() {
+    selectedMonth = this.value;
+    selectedDay = '';
+
+    if (selectedMonth) {
+        loadAvailableDays(selectedYear, selectedMonth);
+    } else {
+        // 日選択をリセット
+        document.getElementById('daySelect').innerHTML = '<option value="">日を選択...</option>';
+        document.getElementById('daySelect').disabled = true;
+    }
+    updateSelectedDateDisplay();
+});
+
+// 日選択イベント
+document.getElementById('daySelect').addEventListener('change', function() {
+    selectedDay = this.value;
+    updateSelectedDateDisplay();
+});
+
+// 日付選択関数（後方互換性のため）
 function selectDate(date) {
-    document.getElementById('dateSelect').value = date;
+    const parts = date.split('-');
+    if (parts.length === 3) {
+        selectedYear = parts[0];
+        selectedMonth = parts[1];
+        selectedDay = parts[2];
+
+        // UI更新
+        document.getElementById('yearSelect').value = selectedYear;
+        loadAvailableMonths(selectedYear).then(() => {
+            document.getElementById('monthSelect').value = selectedMonth;
+            loadAvailableDays(selectedYear, selectedMonth).then(() => {
+                document.getElementById('daySelect').value = selectedDay;
+                updateSelectedDateDisplay();
+            });
+        });
+    }
 }
 
 // データ読み込み関数
 async function loadYieldCurveData() {
-    const selectedDate = document.getElementById('dateSelect').value;
-    
-    if (!selectedDate) {
-        alert('日付を選択してください');
+    // 段階的選択システムから最終的な日付を構築
+    if (!selectedYear || !selectedMonth || !selectedDay) {
+        alert('年・月・日をすべて選択してください');
         return;
     }
+
+    const month = selectedMonth.padStart(2, '0');
+    const day = selectedDay.padStart(2, '0');
+    const selectedDate = `${selectedYear}-${month}-${day}`;
+
+    console.log('Loading data for date:', selectedDate);
     
     // UI状態の更新
     showLoading();

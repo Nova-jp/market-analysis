@@ -3,6 +3,7 @@
 統一されたWebアプリケーションエントリーポイント
 """
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -12,11 +13,34 @@ from app.core.config import settings
 from app.api.endpoints import health, dates, yield_data, scheduler
 from app.web.routes import router as web_router
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    アプリケーションのライフサイクル管理
+    起動時と終了時の処理を安全に実行
+    """
+    # === 起動時処理 ===
+    print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
+    print(f"📊 Environment: {settings.environment}")
+    print(f"🔗 Database configured: {bool(settings.supabase_url)}")
+
+    if settings.is_local:
+        print(f"🌐 Local server: http://{settings.host}:{settings.port}")
+
+    # yieldで制御を渡す（アプリケーション実行中）
+    yield
+
+    # === 終了時処理 ===
+    print(f"👋 {settings.app_name} shutting down...")
+
+
 # FastAPIアプリケーション初期化
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="国債金利分析システム - イールドカーブ比較・分析のための包括的ツール"
+    description="国債金利分析システム - イールドカーブ比較・分析のための包括的ツール",
+    lifespan=lifespan
 )
 
 # プロジェクトルート設定
@@ -59,21 +83,3 @@ async def yield_curve_page(request: Request):
 async def pca_analysis_page(request: Request):
     """PCA分析画面"""
     return templates.TemplateResponse("pca.html", {"request": request})
-
-
-# アプリケーション起動時の設定検証
-@app.on_event("startup")
-async def startup_event():
-    """アプリケーション起動時の処理"""
-    print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
-    print(f"📊 Environment: {settings.environment}")
-    print(f"🔗 Database configured: {bool(settings.supabase_url)}")
-
-    if settings.is_local:
-        print(f"🌐 Local server: http://{settings.host}:{settings.port}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """アプリケーション終了時の処理"""
-    print(f"👋 {settings.app_name} shutting down...")
