@@ -228,7 +228,17 @@ class BondDataProcessor:
                 return float(value)
             
             # 文字列フィールド
-            elif field_name in ['bond_code', 'bond_name']:
+            elif field_name == 'bond_code':
+                # bond_codeは9桁に0パディング
+                code_str = str(value).strip()
+                try:
+                    # 数値に変換可能な場合は9桁にパディング
+                    code_int = int(code_str)
+                    return f'{code_int:09d}'
+                except ValueError:
+                    # 数値でない場合はそのまま返す
+                    return code_str
+            elif field_name == 'bond_name':
                 return str(value).strip()
             
             # デフォルト（float）
@@ -347,7 +357,7 @@ class BondDataProcessor:
             
             try:
                 response = requests.post(
-                    f"{self.supabase_url}/rest/v1/clean_bond_data",
+                    f"{self.supabase_url}/rest/v1/bond_data",
                     headers=headers,
                     json=batch_data
                 )
