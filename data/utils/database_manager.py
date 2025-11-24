@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-Database Manager - Supabaseデータベース操作の統一クラス
-API制限を回避して全データを取得する機能も含む
+Database Manager - スクリプト/バッチ処理用 Supabaseデータベース操作クラス
+
+このモジュールは同期処理用です。
+- データ収集スクリプト (scripts/)
+- バッチ処理
+- 分析スクリプト (analysis/)
+での使用を想定しています。
+
+Web API用（FastAPI async対応）は app/core/database.py を使用すること。
 """
 
 import requests
+from requests.exceptions import RequestException, Timeout, ConnectionError as RequestsConnectionError
 import os
 import json
 from dotenv import load_dotenv
@@ -14,8 +22,16 @@ import logging
 load_dotenv()
 
 class DatabaseManager:
-    """Supabaseデータベース操作を統一するクラス"""
-    
+    """
+    スクリプト/バッチ処理用 Supabaseデータベース操作クラス（同期版）
+
+    データ収集スクリプト、バッチ処理、分析スクリプトで使用。
+    API制限を回避して全データを取得する機能も含む。
+
+    Note:
+        Web API（FastAPI）では app/core/database.py の非同期版を使用すること。
+    """
+
     def __init__(self):
         self.supabase_url = os.getenv('SUPABASE_URL')
         self.supabase_key = os.getenv('SUPABASE_KEY')
@@ -28,7 +44,7 @@ class DatabaseManager:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
     
-    def get_total_record_count(self, table_name: str = 'clean_bond_data') -> int:
+    def get_total_record_count(self, table_name: str = 'bond_data') -> int:
         """テーブルの総レコード数を取得（API制限回避）"""
         headers = self.headers.copy()
         headers['Prefer'] = 'count=exact'
@@ -36,21 +52,28 @@ class DatabaseManager:
         try:
             response = requests.head(
                 f'{self.supabase_url}/rest/v1/{table_name}',
-                headers=headers
+                headers=headers,
+                timeout=30
             )
-            
+
             if 'content-range' in response.headers:
                 content_range = response.headers['content-range']
                 parts = content_range.split('/')
                 if len(parts) == 2 and parts[1] != '*':
                     return int(parts[1])
-            
+
             return 0
-        except Exception as e:
+        except Timeout:
+            self.logger.error("総レコード数取得: タイムアウト")
+            return 0
+        except RequestsConnectionError as e:
+            self.logger.error(f"総レコード数取得: 接続エラー - {e}")
+            return 0
+        except RequestException as e:
             self.logger.error(f"総レコード数取得エラー: {e}")
             return 0
     
-    def get_all_existing_dates(self, table_name: str = 'clean_bond_data') -> Set[str]:
+    def get_all_existing_dates(self, table_name: str = 'bond_data') -> Set[str]:
         """
         API制限を回避してすべての既存日付を取得
         """
@@ -68,7 +91,8 @@ class DatabaseManager:
                         'offset': offset,
                         'limit': limit
                     },
-                    headers=self.headers
+                    headers=self.headers,
+                    timeout=60
                 )
                 
                 if response.status_code != 200:
@@ -91,15 +115,21 @@ class DatabaseManager:
                 if offset % 10000 == 0:
                     self.logger.info(f"既存データ確認中... {len(existing_dates)}日分取得済み")
             
-            self.logger.info(f"✅ 既存データ確認完了: {len(existing_dates)}日分")
+            self.logger.info(f"既存データ確認完了: {len(existing_dates)}日分")
             return existing_dates
-        
-        except Exception as e:
+
+        except Timeout:
+            self.logger.error("既存データ取得: タイムアウト")
+            return existing_dates
+        except RequestsConnectionError as e:
+            self.logger.error(f"既存データ取得: 接続エラー - {e}")
+            return existing_dates
+        except RequestException as e:
             self.logger.error(f"既存データ取得エラー: {e}")
             return existing_dates
     
     def batch_insert_data(self, data_list: List[Dict[Any, Any]], 
-                         table_name: str = 'clean_bond_data', 
+                         table_name: str = 'bond_data', 
                          batch_size: int = 100) -> int:
         """
         バッチでデータを挿入（効率化）
@@ -162,9 +192,10 @@ class DatabaseManager:
                 response = requests.post(
                     f'{self.supabase_url}/rest/v1/{table_name}',
                     headers=self.headers,
-                    json=cleaned_batch
+                    json=cleaned_batch,
+                    timeout=60
                 )
-                
+
                 if response.status_code in [200, 201]:
                     success_count += len(batch_data)
                 else:
@@ -178,14 +209,20 @@ class DatabaseManager:
                         if len(cleaned_batch) > 0:
                             self.logger.warning(f"送信データサンプル: {json.dumps(cleaned_batch[0], ensure_ascii=False)[:300]}")
                         return 0  # エラー発生時はここで中断
-                        
-            except Exception as e:
+
+            except Timeout:
+                self.logger.error("バッチ保存: タイムアウト")
+                continue
+            except RequestsConnectionError as e:
+                self.logger.error(f"バッチ保存: 接続エラー - {e}")
+                continue
+            except RequestException as e:
                 self.logger.error(f"バッチ保存エラー: {e}")
                 continue
         
         return success_count
     
-    def get_date_range_info(self, table_name: str = 'clean_bond_data') -> Dict[str, Any]:
+    def get_date_range_info(self, table_name: str = 'bond_data') -> Dict[str, Any]:
         """データベースの日付範囲情報を取得"""
         try:
             response = requests.get(
@@ -195,13 +232,14 @@ class DatabaseManager:
                     'order': 'trade_date.desc',
                     'limit': 1
                 },
-                headers=self.headers
+                headers=self.headers,
+                timeout=30
             )
-            
+
             latest_date = None
             if response.status_code == 200 and response.json():
                 latest_date = response.json()[0]['trade_date']
-            
+
             response = requests.get(
                 f'{self.supabase_url}/rest/v1/{table_name}',
                 params={
@@ -209,28 +247,31 @@ class DatabaseManager:
                     'order': 'trade_date.asc',
                     'limit': 1
                 },
-                headers=self.headers
+                headers=self.headers,
+                timeout=30
             )
-            
+
             earliest_date = None
             if response.status_code == 200 and response.json():
                 earliest_date = response.json()[0]['trade_date']
-            
+
             total_records = self.get_total_record_count(table_name)
-            
+
             return {
                 'total_records': total_records,
                 'latest_date': latest_date,
                 'earliest_date': earliest_date
             }
-            
-        except Exception as e:
+
+        except Timeout:
+            self.logger.error("日付範囲情報取得: タイムアウト")
+            return {'total_records': 0, 'latest_date': None, 'earliest_date': None}
+        except RequestsConnectionError as e:
+            self.logger.error(f"日付範囲情報取得: 接続エラー - {e}")
+            return {'total_records': 0, 'latest_date': None, 'earliest_date': None}
+        except RequestException as e:
             self.logger.error(f"日付範囲情報取得エラー: {e}")
-            return {
-                'total_records': 0,
-                'latest_date': None,
-                'earliest_date': None
-            }
+            return {'total_records': 0, 'latest_date': None, 'earliest_date': None}
     
     def execute_query(self, sql_query: str, params: tuple = None) -> List[tuple]:
         """
@@ -245,8 +286,8 @@ class DatabaseManager:
             List[tuple]: 結果をタプル形式で返す（従来との互換性）
         """
         try:
-            # clean_bond_dataテーブルから直接クエリする場合の処理
-            if "FROM clean_bond_data" in sql_query.upper() or "from clean_bond_data" in sql_query:
+            # bond_dataテーブルから直接クエリする場合の処理
+            if "FROM bond_data" in sql_query.upper() or "from bond_data" in sql_query:
                 results = self._execute_simple_query(sql_query)
                 # Dict形式の結果をtuple形式に変換
                 if results and isinstance(results[0], dict):
@@ -292,7 +333,7 @@ class DatabaseManager:
             else:
                 # デフォルト: 最初の10件を取得
                 response = requests.get(
-                    f'{self.supabase_url}/rest/v1/clean_bond_data?limit=10',
+                    f'{self.supabase_url}/rest/v1/bond_data?limit=10',
                     headers=self.headers
                 )
                 
@@ -319,7 +360,7 @@ class DatabaseManager:
             results = []
             for issue_type in [1, 2]:
                 response = requests.get(
-                    f'{self.supabase_url}/rest/v1/clean_bond_data?select=bond_name&issue_type=eq.{issue_type}{date_condition}',
+                    f'{self.supabase_url}/rest/v1/bond_data?select=bond_name&issue_type=eq.{issue_type}{date_condition}',
                     headers=self.headers
                 )
                 
@@ -371,7 +412,7 @@ class DatabaseManager:
                 limit = limit_match.group(1)
             
             response = requests.get(
-                f'{self.supabase_url}/rest/v1/clean_bond_data?select={select_columns}&{conditions}&order=bond_name&limit={limit}',
+                f'{self.supabase_url}/rest/v1/bond_data?select={select_columns}&{conditions}&order=bond_name&limit={limit}',
                 headers=self.headers
             )
             
@@ -394,7 +435,7 @@ class DatabaseManager:
             for date_str in sorted(existing_dates, reverse=True)[:20]:  # 最新20件
                 # 各日付のレコード数を取得
                 response = requests.get(
-                    f'{self.supabase_url}/rest/v1/clean_bond_data?select=issue_type&trade_date=eq.{date_str}',
+                    f'{self.supabase_url}/rest/v1/bond_data?select=issue_type&trade_date=eq.{date_str}',
                     headers=self.headers
                 )
                 
@@ -441,7 +482,7 @@ class DatabaseManager:
             
             # 指定日付のイールドカーブデータを取得
             response = requests.get(
-                f'{self.supabase_url}/rest/v1/clean_bond_data',
+                f'{self.supabase_url}/rest/v1/bond_data',
                 params={
                     'select': 'trade_date,due_date,ave_compound_yield,bond_name,interest_payment_date',
                     'trade_date': f'eq.{trade_date}',
@@ -484,7 +525,7 @@ class DatabaseManager:
         """
         try:
             response = requests.get(
-                f'{self.supabase_url}/rest/v1/clean_bond_data',
+                f'{self.supabase_url}/rest/v1/bond_data',
                 params={
                     'select': 'trade_date',
                     'order': 'trade_date.desc',
@@ -524,7 +565,7 @@ class DatabaseManager:
                 start_date, end_date = params[0], params[1]
                 
                 # Supabase REST APIでデータ取得
-                url = f'{self.supabase_url}/rest/v1/clean_bond_data'
+                url = f'{self.supabase_url}/rest/v1/bond_data'
                 
                 # URLパラメータを手動で構築
                 query_params = [

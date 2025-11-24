@@ -44,7 +44,7 @@ class YieldCurveAnalyzer:
         
         try:
             response = requests.get(
-                f'{self.db_manager.supabase_url}/rest/v1/clean_bond_data',
+                f'{self.db_manager.supabase_url}/rest/v1/bond_data',
                 params={
                     'select': '*',
                     'trade_date': f'eq.{target_date}',

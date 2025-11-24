@@ -189,10 +189,10 @@ def get_create_table_sql():
         "-- JSDAデータの正式列名による整形済み国債データテーブル",
         "",
         "-- 既存テーブル削除",
-        "DROP TABLE IF EXISTS clean_bond_data;",
+        "DROP TABLE IF EXISTS bond_data;",
         "",
         "-- テーブル作成",
-        "CREATE TABLE clean_bond_data (",
+        "CREATE TABLE bond_data (",
         "    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,",
         ""
     ]
@@ -231,17 +231,17 @@ def get_create_table_sql():
         ");",
         "",
         "-- インデックス作成",
-        "CREATE INDEX idx_clean_bond_trade_date ON clean_bond_data(trade_date);",
-        "CREATE INDEX idx_clean_bond_category ON clean_bond_data(bond_category);",
-        "CREATE INDEX idx_clean_bond_yield ON clean_bond_data(reference_yield);",
-        "CREATE INDEX idx_clean_bond_maturity ON clean_bond_data(years_to_maturity);",
+        "CREATE INDEX idx_clean_bond_trade_date ON bond_data(trade_date);",
+        "CREATE INDEX idx_clean_bond_category ON bond_data(bond_category);",
+        "CREATE INDEX idx_clean_bond_yield ON bond_data(reference_yield);",
+        "CREATE INDEX idx_clean_bond_maturity ON bond_data(years_to_maturity);",
         "",
         "-- RLS設定",
-        "ALTER TABLE clean_bond_data ENABLE ROW LEVEL SECURITY;",
-        "CREATE POLICY \"Allow public read access on clean_bond_data\" ON clean_bond_data FOR SELECT USING (true);",
-        "CREATE POLICY \"Allow public insert on clean_bond_data\" ON clean_bond_data FOR INSERT WITH CHECK (true);",
-        "CREATE POLICY \"Allow public update on clean_bond_data\" ON clean_bond_data FOR UPDATE USING (true);",
-        "CREATE POLICY \"Allow public delete on clean_bond_data\" ON clean_bond_data FOR DELETE USING (true);"
+        "ALTER TABLE bond_data ENABLE ROW LEVEL SECURITY;",
+        "CREATE POLICY \"Allow public read access on bond_data\" ON bond_data FOR SELECT USING (true);",
+        "CREATE POLICY \"Allow public insert on bond_data\" ON bond_data FOR INSERT WITH CHECK (true);",
+        "CREATE POLICY \"Allow public update on bond_data\" ON bond_data FOR UPDATE USING (true);",
+        "CREATE POLICY \"Allow public delete on bond_data\" ON bond_data FOR DELETE USING (true);"
     ])
     
     return "\n".join(sql_parts)

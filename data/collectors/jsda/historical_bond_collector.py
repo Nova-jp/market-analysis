@@ -140,7 +140,7 @@ class HistoricalBondCollector:
         
         try:
             response = requests.get(
-                f"{self.supabase_url}/rest/v1/clean_bond_data?select=trade_date&order=trade_date",
+                f"{self.supabase_url}/rest/v1/bond_data?select=trade_date&order=trade_date",
                 headers=headers
             )
             

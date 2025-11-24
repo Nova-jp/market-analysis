@@ -2,11 +2,11 @@
 -- L(11), M(12), N(13), T(19)を除く全列を取得
 
 -- 既存テーブル削除
-DROP TABLE IF EXISTS clean_bond_data CASCADE;
+DROP TABLE IF EXISTS bond_data CASCADE;
 DROP TABLE IF EXISTS bond_data CASCADE;
 
 -- JSDAデータテーブル作成（25列）
-CREATE TABLE clean_bond_data (
+CREATE TABLE bond_data (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
 
     -- A-E列: 基本情報
@@ -60,19 +60,19 @@ CREATE TABLE clean_bond_data (
 );
 
 -- インデックス作成
-CREATE INDEX idx_jsda_trade_date ON clean_bond_data(trade_date);
-CREATE INDEX idx_jsda_issue_type ON clean_bond_data(issue_type);
-CREATE INDEX idx_jsda_bond_code ON clean_bond_data(bond_code);
-CREATE INDEX idx_jsda_ave_compound_yield ON clean_bond_data(ave_compound_yield);
-CREATE INDEX idx_jsda_ave_price ON clean_bond_data(ave_price);
-CREATE INDEX idx_jsda_due_date ON clean_bond_data(due_date);
+CREATE INDEX idx_jsda_trade_date ON bond_data(trade_date);
+CREATE INDEX idx_jsda_issue_type ON bond_data(issue_type);
+CREATE INDEX idx_jsda_bond_code ON bond_data(bond_code);
+CREATE INDEX idx_jsda_ave_compound_yield ON bond_data(ave_compound_yield);
+CREATE INDEX idx_jsda_ave_price ON bond_data(ave_price);
+CREATE INDEX idx_jsda_due_date ON bond_data(due_date);
 
 -- RLS設定（開発環境用）
-ALTER TABLE clean_bond_data ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access" ON clean_bond_data FOR SELECT USING (true);
-CREATE POLICY "Allow public insert" ON clean_bond_data FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON clean_bond_data FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON clean_bond_data FOR DELETE USING (true);
+ALTER TABLE bond_data ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access" ON bond_data FOR SELECT USING (true);
+CREATE POLICY "Allow public insert" ON bond_data FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON bond_data FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete" ON bond_data FOR DELETE USING (true);
 
 -- 分析用ビュー
 CREATE VIEW bond_summary AS
@@ -88,7 +88,7 @@ SELECT
     AVG(ave_compound_yield) as avg_compound_yield,
     AVG(ave_price) as avg_price,
     AVG(reporting_members) as avg_reporting_members
-FROM clean_bond_data
+FROM bond_data
 WHERE ave_compound_yield IS NOT NULL
   AND ave_price IS NOT NULL
 GROUP BY trade_date, issue_type

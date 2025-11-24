@@ -12,6 +12,7 @@ class BondYieldData(BaseModel):
     maturity: float = Field(..., description="残存年数")
     yield_rate: float = Field(..., alias="yield", description="利回り(%)")
     bond_name: str = Field(..., description="銘柄名")
+    bond_code: Optional[str] = Field(None, description="銘柄コード (9桁)")
 
     class Config:
         populate_by_name = True

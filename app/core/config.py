@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Supabase データベース設定
     supabase_url: Optional[str] = None
-    supabase_key: Optional[str] = None
+    supabase_key: Optional[str] = None  # Service Role Key（全操作用）
 
     # 環境判定
     environment: str = "local"  # local, production

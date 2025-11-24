@@ -335,8 +335,28 @@ uvicorn app.web.main:app --reload --host 0.0.0.0 --port 8000
 
 ### **環境構築**
 ```bash
+# 仮想環境の作成と有効化（必須）
+python3 -m venv venv
+source venv/bin/activate
+
+# 依存関係のインストール
 pip install -r requirements.txt
 cp .env.example .env  # 環境変数を設定
+```
+
+### **仮想環境ルール（必須）**
+> **重要**: Pythonコードの実行は必ず仮想環境内で行うこと
+
+1. **仮想環境の有効化**: スクリプト実行前に `source venv/bin/activate`
+2. **グローバル環境汚染禁止**: `pip install` はvenv内でのみ実行
+3. **Claude Codeによる自動実行**: 必ず `source venv/bin/activate &&` を前置
+
+```bash
+# 正しい実行方法
+source venv/bin/activate && python3 scripts/xxx.py
+
+# 間違った実行方法（禁止）
+python3 scripts/xxx.py  # グローバル環境で実行される
 ```
 
 ### **アプリケーション起動**
@@ -411,16 +431,40 @@ flake8 webapp/ data/ analysis/
 
 ## ⚙️ 環境変数設定
 
+> **🚨 セキュリティ警告**
+> - `.env`ファイルは**絶対にGitHubにコミットしない**
+> - `.gitignore`に`.env`が含まれていることを確認済み
+> - `SUPABASE_KEY`は**Service Role Key**を使用（全操作権限）
+> - Service Role Keyは**秘密情報**として厳重に管理
+
 `.env`ファイルに以下を設定:
 ```env
 # Supabase 設定
 SUPABASE_URL=your_supabase_project_url
-SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_KEY=your_service_role_key  # ⚠️ Service Role Key（全権限）
 
 # アプリケーション設定
 DEBUG=True
 LOG_LEVEL=INFO
 ```
+
+### **データベース接続設計**
+
+**v3.1での設計変更（2025-10-16）:**
+- **単一キー設計**: Service Role Key のみ使用
+- **全操作統一**: Webアプリ・データ収集・スケジューラーすべてで同一キー
+- **セキュリティ**: Cloud Run内部からのアクセスのみ許可（RLSで追加保護）
+
+**理由:**
+1. **本番環境はCloud Run内部** → 外部公開されない信頼環境
+2. **RLS設定済み** → 万が一の保護層が存在
+3. **シンプル化** → 環境変数1つで管理が容易
+4. **ローカル・本番統一** → 同じコードが両環境で動作
+
+**本プロジェクトの使用:**
+- **Webアプリ**: Service Role Key（app/core/database.py）
+- **データ収集スクリプト**: Service Role Key（data/utils/database_manager.py）
+- **Cloud Run自動収集**: Service Role Key（環境変数で設定）
 
 ## 📈 プロジェクト状況
 
@@ -457,8 +501,25 @@ LOG_LEVEL=INFO
 ---
 
 ## 📝 最終更新
-- **更新日**: 2025-10-05
-- **バージョン**: v3.0
+
+### v3.1 (2025-10-16)
+- **更新者**: Claude Code Assistant
+- **変更内容**:
+  - **データベース接続を単一キー設計に統一**
+    - `SUPABASE_ANON_KEY`を廃止、`SUPABASE_KEY`（Service Role Key）のみ使用
+    - `app/core/config.py`: 環境変数定義を簡素化
+    - `app/core/database.py`: `DatabaseManager`を単一キー対応に変更
+  - **Dockerfileの修正**
+    - `COPY src/` → `COPY data/` に変更（ディレクトリ構造の変更に対応）
+  - **.dockerignoreの最適化**
+    - `data/`を除外リストから削除（必要なディレクトリ）
+    - `scripts/`, `analysis/`を除外リスト追加（Cloud Run不要）
+  - **Cloud Run環境変数の更新**
+    - Service Role Keyに統一（全操作対応）
+  - **検証スクリプトの削除**
+    - 一時的な検証スクリプト4件を削除（コードベースのクリーンアップ）
+
+### v3.0 (2025-10-05)
 - **更新者**: Claude Code Assistant
 - **変更内容**:
   - `src/`ディレクトリの削除（`data/`に統一）

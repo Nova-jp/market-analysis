@@ -245,6 +245,30 @@
                         title: {
                             display: true,
                             text: 'Yield Curve Comparison'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            filter: function(item) {
+                                // 最初の項目のbond_codeと一致するもののみ表示
+                                if (!this.dataPoints || this.dataPoints.length === 0) return true;
+                                const targetCode = this.dataPoints[0].raw.bond_code;
+                                return item.raw.bond_code === targetCode;
+                            },
+                            callbacks: {
+                                title: function(context) {
+                                    const item = context[0];
+                                    const bondName = item.raw.bond_name || 'N/A';
+                                    const bondCode = item.raw.bond_code || 'N/A';
+                                    return `${bondName} (${bondCode})`;
+                                },
+                                label: function(context) {
+                                    const date = context.dataset.label;
+                                    const yld = context.parsed.y.toFixed(3);
+                                    const mat = context.parsed.x.toFixed(2);
+                                    return `${date}: 残存${mat}年, 利回り${yld}%`;
+                                }
+                            }
                         }
                     },
                     interaction: {
@@ -514,7 +538,9 @@
                                 label: date,
                                 data: filteredData.map(point => ({
                                     x: point.maturity,
-                                    y: point.yield
+                                    y: point.yield,
+                                    bond_code: point.bond_code,
+                                    bond_name: point.bond_name
                                 })),
                                 borderColor: colors[i % colors.length],  // 20色をループ
                                 backgroundColor: colors[i % colors.length] + '20',

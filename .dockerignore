@@ -22,14 +22,13 @@ __pycache__/
 *.log
 logs/
 
-# Not needed for Cloud Run (use src/, app/ instead)
+# Not needed for Cloud Run
 deployments/
-data/
 notebooks/
 scripts/
+analysis/
 frontend/
 webapp/
-analysis/
 legacy/
 
 # Docs

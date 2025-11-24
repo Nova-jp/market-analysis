@@ -26,7 +26,7 @@ async def get_yield_data(
 
         # データベースから取得
         result = await db_manager.get_bond_data({
-            'select': 'trade_date,due_date,ave_compound_yield,bond_name',
+            'select': 'trade_date,due_date,ave_compound_yield,bond_name,bond_code',
             'trade_date': f'eq.{date}',
             'ave_compound_yield': 'not.is.null',
             'due_date': 'not.is.null',
@@ -57,7 +57,8 @@ async def get_yield_data(
                     bond_yield_data = BondYieldData(
                         maturity=round(years_to_maturity, 3),
                         yield_rate=float(row['ave_compound_yield']),
-                        bond_name=row['bond_name']
+                        bond_name=row['bond_name'],
+                        bond_code=row.get('bond_code')
                     )
                     processed_data.append(bond_yield_data)
             except (ValueError, TypeError):
