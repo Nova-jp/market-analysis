@@ -137,6 +137,16 @@ class TDBCollector:
             logger.warning(f"⚠️  日付パース失敗: {sheet_name}, 回号{issue_number}")
             return None
 
+        # 発行額フィールド
+        allocated_amount = self._parse_amount(row.get('募入決定額'))
+        type1_noncompetitive = self._parse_amount(row.get('第Ⅰ非価格競争'))
+
+        # total_amount計算（NULL値は0として扱う）
+        total_amount = (
+            (allocated_amount or 0) +
+            (type1_noncompetitive or 0)
+        )
+
         tdb_data = {
             # 主キー
             'bond_code': bond_code,
@@ -151,7 +161,7 @@ class TDBCollector:
             # 発行規模
             'planned_amount': None,  # Excelにデータなし
             'offered_amount': self._parse_amount(row.get('応募額')),
-            'allocated_amount': self._parse_amount(row.get('募入決定額')),
+            'allocated_amount': allocated_amount,
 
             # 価格・利回り
             'average_price': self._parse_price(row.get('平均価格')),
@@ -161,8 +171,9 @@ class TDBCollector:
 
             # 非価格競争
             'fixed_rate_or_noncompetitive': None,
-            'type1_noncompetitive': self._parse_amount(row.get('第Ⅰ非価格競争')),
+            'type1_noncompetitive': type1_noncompetitive,
             'type2_noncompetitive': None,
+            'total_amount': total_amount,
 
             # メタデータ
             'data_source': f'MOF_TDB_{sheet_name}',

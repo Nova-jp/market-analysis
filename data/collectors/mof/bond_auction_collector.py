@@ -148,6 +148,18 @@ class BondAuctionCollector:
                     except:
                         return None
 
+                # 基本フィールド
+                allocated_amount = to_numeric(row.get('落札・割当額'))
+                type1_noncompetitive = to_numeric(row.get('第Ⅰ非価格競争'))
+                type2_noncompetitive = to_numeric(row.get('第Ⅱ非価格競争'))
+
+                # total_amount計算（NULL値は0として扱う）
+                total_amount = (
+                    (allocated_amount or 0) +
+                    (type1_noncompetitive or 0) +
+                    (type2_noncompetitive or 0)
+                )
+
                 record = {
                     'bond_code': bond_code,
                     'auction_date': auction_date,
@@ -157,14 +169,15 @@ class BondAuctionCollector:
                     'coupon_rate': to_numeric(row.get('表面利率')),
                     'planned_amount': int(row['発行予定額']) if pd.notna(row.get('発行予定額')) else None,
                     'offered_amount': int(row['応募額']) if pd.notna(row.get('応募額')) else None,
-                    'allocated_amount': to_numeric(row.get('落札・割当額')),
+                    'allocated_amount': allocated_amount,
                     'average_price': to_numeric(row.get('平均価格')),
                     'average_yield': to_numeric(row.get('平均利回')),
                     'lowest_price': to_numeric(row.get('最低価格', row.get('最低価格*'))),
                     'highest_yield': to_numeric(row.get('最高利回')),
                     'fixed_rate_or_noncompetitive': to_numeric(row.get('定率/非競争')),
-                    'type1_noncompetitive': to_numeric(row.get('第Ⅰ非価格競争')),
-                    'type2_noncompetitive': to_numeric(row.get('第Ⅱ非価格競争')),
+                    'type1_noncompetitive': type1_noncompetitive,
+                    'type2_noncompetitive': type2_noncompetitive,
+                    'total_amount': total_amount,
                     'data_source': 'MOF_JGB_Historical_Data'
                 }
 

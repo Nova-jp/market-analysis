@@ -355,6 +355,10 @@ class LiquiditySupplyCollector:
                 if not bond_code:
                     continue
 
+                # total_amount計算（流動性供給入札はallocated_amountのみ、非価格競争なし）
+                allocated_amount = bond['amount']
+                total_amount = allocated_amount or 0
+
                 bond_data = {
                     # 主キー
                     'bond_code': bond_code,
@@ -365,7 +369,10 @@ class LiquiditySupplyCollector:
                     'bond_type_label': bond['bond_type'],
 
                     # 発行額（個別銘柄）
-                    'allocated_amount': bond['amount'],
+                    'allocated_amount': allocated_amount,
+                    'type1_noncompetitive': None,  # 流動性供給入札には非価格競争なし
+                    'type2_noncompetitive': None,
+                    'total_amount': total_amount,
 
                     # 利回り（利回格差）
                     'highest_yield': summary['highest_yield'],  # 最大利回格差

@@ -261,6 +261,15 @@ class DailyAuctionCollector:
             if 'bond_code' in record:
                 record['bond_code'] = str(record['bond_code']).zfill(9)
 
+            # total_amount計算（NULL値は0として扱う）
+            # コレクターで既に計算されていない場合のみ計算
+            if 'total_amount' not in record or record['total_amount'] is None:
+                record['total_amount'] = (
+                    (record.get('allocated_amount') or 0) +
+                    (record.get('type1_noncompetitive') or 0) +
+                    (record.get('type2_noncompetitive') or 0)
+                )
+
             # batch_insert_dataでUPSERT（on_conflict='bond_code,auction_date'）
             result = self.db.batch_insert_data(
                 [record],

@@ -329,6 +329,13 @@ class BondAuctionWebCollector:
             if match:
                 result['type2_noncompetitive'] = self._parse_amount(match.group(1), as_float=True)
 
+        # total_amount計算（NULL値は0として扱う）
+        result['total_amount'] = (
+            (result.get('allocated_amount') or 0) +
+            (result.get('type1_noncompetitive') or 0) +
+            (result.get('type2_noncompetitive') or 0)
+        )
+
         return result
 
     def _parse_japanese_date(self, date_str: str) -> Optional[date]:
