@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from app.core.config import settings
-from app.api.endpoints import health, dates, yield_data, scheduler, pca
+from app.api.endpoints import health, dates, yield_data, scheduler, pca, market_amount
 from app.web.routes import router as web_router
 
 
@@ -63,6 +63,7 @@ app.include_router(dates.router, tags=["dates"])
 app.include_router(yield_data.router, tags=["yield_data"])
 app.include_router(scheduler.router, tags=["scheduler"])
 app.include_router(pca.router, prefix="/api/pca", tags=["pca"])
+app.include_router(market_amount.router, tags=["market_amount"])
 
 # Webページルーターの登録
 app.include_router(web_router, tags=["web"])
@@ -84,6 +85,12 @@ async def yield_curve_page(request: Request):
 async def pca_analysis_page(request: Request):
     """PCA分析画面"""
     return templates.TemplateResponse("pca.html", {"request": request})
+
+
+@app.get("/market-amount", response_class=HTMLResponse)
+async def market_amount_page(request: Request):
+    """市中残存額可視化画面"""
+    return templates.TemplateResponse("market_amount.html", {"request": request})
 
 
 @app.get("/debug", response_class=HTMLResponse)

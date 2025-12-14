@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>市中残存額分布 - Market Analytics</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .date-chip {
+            display: inline-block;
+            margin: 3px;
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            position: relative;
+        }
+        .date-chip .remove-btn {
+            margin-left: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .date-chip .remove-btn:hover {
+            color: #ffcccc;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            margin-top: 20px;
+        }
+        .quick-btn {
+            margin: 2px;
+        }
+        .date-input-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .filter-section {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .range-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .range-input {
+            width: 80px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-3">
+        <!-- ヘッダー -->
+        <div class="row mb-3">
+            <div class="col">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item">
+                            <a href="/" class="text-decoration-none">
+                                <i class="fas fa-home"></i> Home
+                            </a>
+                        </li>
+                        <li class="breadcrumb-item active">市中残存額分布</li>
+                    </ol>
+                </nav>
+                <h2><i class="fas fa-coins me-2"></i>市中残存額分布比較</h2>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 左サイド: 日付選択 -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-calendar-alt me-2"></i>日付選択
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- 固定メッセージエリア（レイアウトシフト防止） -->
+                        <div id="messageContainer" style="min-height: 58px; margin-bottom: 10px;">
+                            <!-- メッセージがここに表示される -->
+                        </div>
+
+                        <!-- 区切り幅選択 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">区切り幅:</label>
+                            <select id="bucketSizeSelector" class="form-select">
+                                <option value="0.25">0.25年区切り</option>
+                                <option value="0.5">0.5年区切り</option>
+                                <option value="1" selected>1年区切り</option>
+                                <option value="2">2年区切り</option>
+                            </select>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                区切り幅を変更すると全グラフが更新されます
+                            </small>
+                        </div>
+
+                        <!-- 日付直接入力 -->
+                        <div class="date-input-section">
+                            <label class="form-label fw-bold">日付を直接入力:</label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    id="dateInput"
+                                    class="form-control"
+                                    placeholder="2025-09-05"
+                                    maxlength="10"
+                                >
+                                <button class="btn btn-primary" id="addDateBtn" type="button">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                YYYY-MM-DD 形式で入力してください
+                            </small>
+                        </div>
+
+                        <!-- 年限範囲フィルター -->
+                        <div class="filter-section">
+                            <label class="form-label fw-bold">年限範囲フィルター:</label>
+                            <div class="range-input-group">
+                                <input type="number" id="minMaturity" class="form-control range-input"
+                                       placeholder="最小" min="0" max="40" step="0.1" value="">
+                                <span>〜</span>
+                                <input type="number" id="maxMaturity" class="form-control range-input"
+                                       placeholder="最大" min="0" max="40" step="0.1" value="">
+                                <span>年</span>
+                                <button id="applyFilter" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-filter"></i>
+                                </button>
+                                <button id="clearFilter" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">
+                                例: 5〜15年の範囲を表示
+                            </small>
+                        </div>
+
+                        <!-- クイック選択 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">クイック選択:</label>
+                            <div id="quickButtons">
+                                <div class="text-center">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">読み込み中...</span>
+                                    </div>
+                                    <small class="d-block text-muted mt-1">日付を読み込み中...</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 選択された日付 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">選択中の日付 (<span id="dateCount">0</span>/20):</label>
+                            <div id="selectedDates">
+                                <small class="text-muted">日付を選択してください</small>
+                            </div>
+                        </div>
+
+                        <!-- 操作ボタン -->
+                        <div class="d-grid gap-2">
+                            <button id="clearAllBtn" class="btn btn-outline-danger btn-sm">
+                                <i class="fas fa-trash me-1"></i>全て削除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 統計情報 -->
+                <div class="card mt-3" id="statsCard" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-bar me-2"></i>統計情報
+                        </h6>
+                    </div>
+                    <div class="card-body" id="statsContent">
+                        <!-- 動的に生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右サイド: グラフ表示 -->
+            <div class="col-md-9">
+                <!-- グラフ1: 市中残存額 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-line me-2"></i>市中残存額分布
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="marketAmountChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- グラフ2: 差分グラフ（2日付以上選択時のみ表示） -->
+                <div class="card mt-3" id="diffChartCard" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-area me-2"></i>
+                            差分グラフ (基準: <span id="baseDate">-</span>)
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="diffChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', path='/js/market_amount.js') }}"></script>
+</body>
+</html>

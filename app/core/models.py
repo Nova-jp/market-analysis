@@ -89,3 +89,18 @@ def validate_maturity_range(min_years: Optional[float], max_years: Optional[floa
     if min_years is not None and max_years is not None and min_years > max_years:
         return False
     return True
+
+
+class MarketAmountBucket(BaseModel):
+    """市中残存額バケットデータモデル"""
+    year: int = Field(..., description="残存年限バケット (0=0-1年, 1=1-2年, ...)")
+    amount: float = Field(..., description="市中残存額合計 (億円)")
+
+
+class MarketAmountResponse(BaseModel):
+    """市中残存額レスポンスモデル"""
+    date: str = Field(..., description="対象日付 (YYYY-MM-DD)")
+    buckets: List[MarketAmountBucket] = Field(..., description="1年区切りバケットデータ")
+    total_amount: float = Field(..., description="総市中残存額 (億円)")
+    bond_count: int = Field(..., description="対象銘柄数")
+    error: Optional[str] = Field(None, description="エラーメッセージ")
