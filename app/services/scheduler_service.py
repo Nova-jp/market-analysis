@@ -23,6 +23,7 @@ class SchedulerService:
     def __init__(self):
         self.processor = BondDataProcessor()
         self.db_manager = DatabaseManager()
+        self.date_validation_warning = None  # 日付検証の警告メッセージ
 
     def get_target_date(self) -> str:
         """
@@ -116,7 +117,27 @@ class SchedulerService:
                 target_date = date.fromisoformat(target_date_str)
 
                 # CSVデータ取得
-                url, filename = self.processor.build_csv_url(target_date)
+                # target_date: HTML/CSV公表日（翌営業日）
+                # actual_trade_date: 実際の取引日（公表日の1営業日前）
+                url, filename, actual_trade_date = self.processor.build_csv_url(target_date)
+
+                # 日付検証: actual_trade_dateが今日（実行日）と一致するか確認
+                today = date.today()
+                if actual_trade_date != today:
+                    warning_msg = (
+                        f"⚠️ 日付不一致警告: "
+                        f"実行日={today.isoformat()}, "
+                        f"計算された取引日={actual_trade_date.isoformat()}, "
+                        f"CSV公表日={target_date_str}"
+                    )
+                    logger.warning(warning_msg)
+                    self.date_validation_warning = warning_msg
+                else:
+                    logger.info(f"✅ 日付検証OK: 実行日={today.isoformat()}, 取引日={actual_trade_date.isoformat()}")
+                    self.date_validation_warning = None
+
+                logger.info(f"CSV公表日: {target_date_str}, 実際の取引日: {actual_trade_date}")
+
                 raw_df = self.processor.download_csv_data(url)
 
                 if raw_df is None:
@@ -137,8 +158,8 @@ class SchedulerService:
                     logger.info(f"Processed data is empty for {target_date_str}")
                     return 0
 
-                # trade_date追加
-                processed_df['trade_date'] = target_date_str
+                # trade_date追加（実際の取引日を使用）
+                processed_df['trade_date'] = actual_trade_date.isoformat()
 
                 # データベース保存
                 batch_data = processed_df.to_dict('records')
@@ -180,13 +201,20 @@ class SchedulerService:
             # 次回収集対象日付
             next_target = self.get_target_date()
 
-            return {
+            result = {
                 "status": "healthy",
                 "database_connected": record_count >= 0,
                 "total_records": record_count if record_count >= 0 else None,
                 "next_collection_target": next_target,
                 "timestamp": datetime.now().isoformat()
             }
+
+            # 日付検証の警告があれば追加
+            if self.date_validation_warning:
+                result["date_validation_warning"] = self.date_validation_warning
+                result["status"] = "warning"
+
+            return result
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return {

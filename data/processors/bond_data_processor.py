@@ -9,13 +9,14 @@ JSDAからの債券データを処理するメインクラス
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import requests
 import io
 import logging
 from typing import Optional, Dict, List
 import os
 from dotenv import load_dotenv
+import jpholiday
 
 load_dotenv()
 
@@ -78,24 +79,50 @@ class BondDataProcessor:
                 return check_date
         return today
     
-    def build_csv_url(self, date_obj: datetime) -> tuple:
-        """CSVファイルURLを構築
+    def get_previous_business_day(self, d: date) -> date:
+        """1営業日前を取得（土日・祝日スキップ）"""
+        prev = d - timedelta(days=1)
+        while prev.weekday() >= 5 or jpholiday.is_holiday(prev):
+            prev -= timedelta(days=1)
+        return prev
+
+    def build_csv_url(self, date_obj) -> tuple:
+        """CSVファイルURLを構築し、実際の取引日を計算
+
+        JSDAのCSVファイル名の日付 = 公表日（翌営業日）
+        実際の取引日 = 公表日の1営業日前
+
+        Args:
+            date_obj: CSV公表日（JSDAサイトの表示日付） - datetime or date
+
+        Returns:
+            tuple: (url, filename, actual_trade_date)
+
         2019年以前: /files/YYYY/MM/S{YYMMDD}.csv
         2020年以降: /files/YYYY/S{YYMMDD}.csv
         """
-        year = date_obj.year
-        month = date_obj.month
-        date_str = date_obj.strftime("%y%m%d")
+        # datetime.date または datetime.datetime のどちらでも対応
+        if isinstance(date_obj, datetime):
+            target_date = date_obj.date()
+        else:
+            target_date = date_obj
+
+        year = target_date.year
+        month = target_date.month
+        date_str = target_date.strftime("%y%m%d")
         filename = f"S{date_str}.csv"
-        
+
         # 2019年以前は月別ディレクトリ構造
         if year <= 2019:
             url = f"{self.base_url}/{year}/{month:02d}/{filename}"
         else:
             # 2020年以降は年別ディレクトリのみ
             url = f"{self.base_url}/{year}/{filename}"
-        
-        return url, filename
+
+        # 実際の取引日を計算（公表日の1営業日前）
+        actual_trade_date = self.get_previous_business_day(target_date)
+
+        return url, filename, actual_trade_date
     
     def download_csv_data(self, url: str) -> Optional[pd.DataFrame]:
         """CSVデータをダウンロード"""

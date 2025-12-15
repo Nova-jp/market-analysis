@@ -3,6 +3,14 @@
 {% block title %}ダッシュボード - {{ super() }}{% endblock %}
 
 {% block content %}
+<!-- スケジューラー警告エリア -->
+<div id="schedulerAlert" style="display: none;" class="alert alert-warning alert-dismissible fade show" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>データ収集警告:</strong>
+    <span id="schedulerAlertMessage"></span>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
 <div class="row">
     <!-- サイドバー -->
     <div class="col-md-3">
@@ -552,8 +560,34 @@ function updateStats(stats) {
 // イベントリスナー
 document.getElementById('loadData').addEventListener('click', loadYieldCurveData);
 
+// スケジューラーステータスチェック
+async function checkSchedulerStatus() {
+    try {
+        const response = await fetch('/api/scheduler/status');
+        if (response.ok) {
+            const status = await response.json();
+
+            // 日付検証の警告がある場合、アラートを表示
+            if (status.date_validation_warning) {
+                document.getElementById('schedulerAlertMessage').textContent = status.date_validation_warning;
+                document.getElementById('schedulerAlert').style.display = 'block';
+            } else {
+                document.getElementById('schedulerAlert').style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('スケジューラーステータス取得エラー:', error);
+    }
+}
+
 // ページ読み込み時に最新データを自動読み込み
 document.addEventListener('DOMContentLoaded', function() {
+    // スケジューラーステータスをチェック
+    checkSchedulerStatus();
+
+    // 30秒ごとにステータスを再チェック
+    setInterval(checkSchedulerStatus, 30000);
+
     {% if available_dates %}
     selectDate('{{ available_dates[0] }}');
     setTimeout(loadYieldCurveData, 500);
