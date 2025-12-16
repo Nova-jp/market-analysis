@@ -3,10 +3,10 @@
 市中残存額の残存年限別集計データの取得・加工
 """
 from fastapi import APIRouter, HTTPException, Path, Query
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 from app.core.database import db_manager
-from app.core.models import MarketAmountResponse, MarketAmountBucket, validate_date_format
+from app.core.models import MarketAmountResponse, MarketAmountBucket, QuickDatesResponse, validate_date_format
 
 router = APIRouter()
 
@@ -88,5 +88,67 @@ async def get_market_amount(
 
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/market-amount-quick-dates", response_model=QuickDatesResponse)
+async def get_market_amount_quick_dates():
+    """
+    市中残存額用クイック選択日付を取得
+    market_amountカラムがnot nullの日付のみを返す
+    """
+    try:
+        # market_amountがnot nullの日付を取得
+        result = await db_manager.get_bond_data({
+            'select': 'trade_date',
+            'market_amount': 'not.is.null',
+            'order': 'trade_date.desc',
+            'limit': 10000  # 約30営業日分
+        })
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        if not result["data"]:
+            raise HTTPException(
+                status_code=404,
+                detail="No market amount data found in database"
+            )
+
+        # ユニークな日付リストを作成（降順ソート維持）
+        unique_dates = list(dict.fromkeys([
+            item['trade_date'] for item in result["data"]
+        ]))
+
+        quick_dates = {}
+
+        # インデックスベースで営業日を取得
+        if len(unique_dates) > 0:
+            quick_dates['latest'] = unique_dates[0]
+
+        if len(unique_dates) > 1:
+            quick_dates['previous'] = unique_dates[1]
+
+        if len(unique_dates) > 5:
+            quick_dates['five_days_ago'] = unique_dates[5]
+
+        # 1ヶ月前の営業日を計算
+        if unique_dates:
+            try:
+                latest_dt = datetime.strptime(unique_dates[0], '%Y-%m-%d')
+                month_ago_target = latest_dt - timedelta(days=30)
+                target_str = month_ago_target.strftime('%Y-%m-%d')
+
+                # 1ヶ月前に最も近い過去の営業日を検索
+                for date in unique_dates:
+                    if date <= target_str:
+                        quick_dates['month_ago'] = date
+                        break
+            except ValueError:
+                pass
+
+        return QuickDatesResponse(**quick_dates)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

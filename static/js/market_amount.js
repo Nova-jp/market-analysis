@@ -252,7 +252,7 @@ function updateDisplay() {
 // クイック日付読み込み
 async function loadQuickDates() {
     try {
-        const response = await fetch('/api/quick-dates');
+        const response = await fetch('/api/market-amount-quick-dates');
         const dates = await response.json();
 
         const container = document.getElementById('quickButtons');
