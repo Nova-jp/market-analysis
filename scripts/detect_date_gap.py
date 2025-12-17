@@ -22,7 +22,6 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
-import jpholiday
 
 # ロギング設定
 logging.basicConfig(
@@ -38,31 +37,12 @@ sys.path.insert(0, str(project_root))
 # 環境変数読み込み
 load_dotenv()
 
-
-def is_business_day(date_obj):
-    """営業日かどうか判定"""
-    # 土日祝日は営業日ではない
-    if date_obj.weekday() >= 5:  # 土曜=5, 日曜=6
-        return False
-    if jpholiday.is_holiday(date_obj):
-        return False
-    return True
-
-
-def get_next_business_day(date_obj):
-    """次の営業日を取得"""
-    next_day = date_obj + timedelta(days=1)
-    while not is_business_day(next_day):
-        next_day += timedelta(days=1)
-    return next_day
-
-
-def get_previous_business_day(date_obj):
-    """前の営業日を取得"""
-    prev_day = date_obj - timedelta(days=1)
-    while not is_business_day(prev_day):
-        prev_day -= timedelta(days=1)
-    return prev_day
+# 営業日判定関数を共通モジュールからインポート
+from data.utils.date_utils import (
+    is_business_day,
+    get_next_business_day,
+    get_previous_business_day
+)
 
 
 def main():

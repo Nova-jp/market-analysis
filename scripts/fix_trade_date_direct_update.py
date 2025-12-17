@@ -17,7 +17,6 @@ import os
 from datetime import date, timedelta
 from typing import List, Dict
 import logging
-import jpholiday
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from supabase import create_client
 from data.utils.database_manager import DatabaseManager
+from data.utils.date_utils import get_previous_business_day
 
 load_dotenv()
 
@@ -33,14 +33,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-def get_previous_business_day(d: date) -> date:
-    """1営業日前を取得（土日・祝日スキップ）"""
-    prev = d - timedelta(days=1)
-    while prev.weekday() >= 5 or jpholiday.is_holiday(prev):
-        prev -= timedelta(days=1)
-    return prev
 
 
 def build_date_mapping() -> List[Dict[str, str]]:

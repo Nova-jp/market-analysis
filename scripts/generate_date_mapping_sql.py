@@ -13,23 +13,15 @@ trade_date 日付マッピングSQL生成スクリプト
 import sys
 import os
 from datetime import date, timedelta
-import jpholiday
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 from data.utils.database_manager import DatabaseManager
+from data.utils.date_utils import get_previous_business_day
 
 load_dotenv()
-
-
-def get_previous_business_day(d: date) -> date:
-    """1営業日前を取得（土日・祝日スキップ）"""
-    prev = d - timedelta(days=1)
-    while prev.weekday() >= 5 or jpholiday.is_holiday(prev):
-        prev -= timedelta(days=1)
-    return prev
 
 
 def main():
