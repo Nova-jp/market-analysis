@@ -23,6 +23,9 @@ openpyxl==3.1.2
 beautifulsoup4==4.12.2
 xlrd==2.0.1
 
+# PDF処理
+pdfplumber==0.11.8
+
 # 機械学習・統計分析
 scikit-learn==1.3.2
 
@@ -31,3 +34,6 @@ jpholiday==0.1.8
 
 # 環境変数管理
 python-dotenv==1.0.0
+
+# プログレスバー表示
+tqdm>=4.66.0

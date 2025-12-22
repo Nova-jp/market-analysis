@@ -3,6 +3,7 @@ Cloud Scheduler用データ収集API
 
 スケジュール:
 - 毎日18:00: JSDAデータ収集 (daily-collection)
+- 毎日18:00: 金利スワップデータ収集 (irs-daily-collection) ★NEW
 - 毎月1日 6:00: 入札カレンダー取得 (calendar-refresh)
 - 毎日12:36: 入札結果収集 (auction-collection) ※入札がある日のみ実行
 
@@ -18,6 +19,7 @@ from datetime import datetime, date
 from typing import Optional
 
 from app.services.scheduler_service import SchedulerService
+from app.services.irs_scheduler_service import IRSSchedulerService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ def get_calendar_collector():
 
 # スケジューラーサービスのインスタンス
 scheduler_service = SchedulerService()
+irs_scheduler_service = IRSSchedulerService()
 
 
 def verify_cloud_scheduler_request(
@@ -267,5 +270,46 @@ async def auction_data_collection(
 
     except Exception as e:
         error_msg = f"Auction collection error: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@router.post("/api/scheduler/irs-daily-collection")
+async def irs_daily_data_collection(
+    request: Request,
+    x_cloudscheduler: Optional[str] = Header(None, alias="X-CloudScheduler"),
+    user_agent: Optional[str] = Header(None, alias="User-Agent")
+):
+    """
+    金利スワップ(IRS)データ収集エンドポイント
+    Cloud Schedulerから毎日18:00に呼び出される
+
+    JPXから金利スワップ清算値段を取得してSupabaseに保存
+    """
+    if not verify_cloud_scheduler_request(request, x_cloudscheduler, user_agent):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is only accessible by Cloud Scheduler"
+        )
+
+    logger.info("=" * 60)
+    logger.info("IRS daily data collection triggered by Cloud Scheduler")
+    logger.info(f"Timestamp: {datetime.now().isoformat()}")
+    logger.info("=" * 60)
+
+    try:
+        result = irs_scheduler_service.collect_data()
+
+        if result["status"] == "success":
+            logger.info("IRS data collection completed successfully")
+            return result
+        else:
+            logger.error(f"IRS data collection failed: {result.get('message')}")
+            raise HTTPException(status_code=500, detail=result.get("message"))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error in IRS collection: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise HTTPException(status_code=500, detail=error_msg)
