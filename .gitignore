@@ -137,3 +137,4 @@ requirements-*.txt
 !data_files/available_dates_*.json
 !CLAUDE.md
 .vercel
+data_exports/

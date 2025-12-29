@@ -177,6 +177,40 @@
                     </div>
                 </div>
 
+                <!-- 銘柄検索・選択セクション -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-search me-2"></i>銘柄検索
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">銘柄コード入力:</label>
+                            <div class="input-group">
+                                <input type="text" id="bondCodeInput" class="form-control"
+                                       placeholder="003720067" maxlength="9">
+                                <button class="btn btn-primary" id="searchBondBtn" type="button">
+                                    <i class="fas fa-chart-line"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">9桁の銘柄コードを入力</small>
+                        </div>
+
+                        <!-- 銘柄一覧（クイック選択） -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">クイック選択:</label>
+                            <div id="bondList" style="max-height: 300px; overflow-y: auto;">
+                                <div class="text-center">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">読み込み中...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 統計情報 -->
                 <div class="card mt-3" id="statsCard" style="display: none;">
                     <div class="card-header">
@@ -217,6 +251,26 @@
                     <div class="card-body">
                         <div class="chart-container">
                             <canvas id="diffChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 銘柄詳細グラフ -->
+                <div class="card mt-3" id="bondDetailCard" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-line me-2"></i>
+                            銘柄別時系列推移: <span id="bondDetailName">-</span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="bondDetailChart"></canvas>
+                        </div>
+
+                        <!-- 統計情報 -->
+                        <div class="row mt-3" id="bondStats">
+                            <!-- JavaScriptで動的生成 -->
                         </div>
                     </div>
                 </div>

@@ -5,6 +5,8 @@ let diffChart = null;
 let bucketSize = 1.0;
 let maturityFilter = { min: null, max: null };
 const MAX_DATES = 20;
+let bondDetailChart = null;
+let currentBondCode = null;
 const colors = [
     '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
     '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
@@ -16,8 +18,10 @@ const colors = [
 document.addEventListener('DOMContentLoaded', function() {
     initChart();
     initDiffChart();
+    initBondDetailChart();
     setupEventListeners();
     loadQuickDates();
+    loadBondList();
 });
 
 // グラフ初期化
@@ -170,6 +174,23 @@ function setupEventListeners() {
         document.getElementById('maxMaturity').value = '';
         showMessage('年限フィルターをクリアしました', 'info');
         updateChart();
+    });
+
+    // 銘柄検索ボタン
+    document.getElementById('searchBondBtn').addEventListener('click', function() {
+        const bondCode = document.getElementById('bondCodeInput').value.trim();
+        if (bondCode.length === 9) {
+            loadBondDetail(bondCode);
+        } else {
+            showMessage('9桁の銘柄コードを入力してください', 'warning');
+        }
+    });
+
+    // Enterキーで検索
+    document.getElementById('bondCodeInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('searchBondBtn').click();
+        }
     });
 }
 
@@ -588,5 +609,189 @@ async function updateDiffChart() {
     } catch (error) {
         console.error('差分グラフ更新エラー:', error);
         diffChartCard.style.display = 'none';
+    }
+}
+
+// 銘柄詳細チャート初期化
+function initBondDetailChart() {
+    const ctx = document.getElementById('bondDetailChart').getContext('2d');
+    bondDetailChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'month',
+                        displayFormats: {
+                            month: 'YYYY-MM'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: '取引日',
+                        font: { size: 14, weight: 'bold' }
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: '市中残存額 (億円)',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        title: function(context) {
+                            const date = new Date(context[0].parsed.x);
+                            return date.toISOString().split('T')[0];
+                        },
+                        label: function(context) {
+                            const amount = context.parsed.y.toLocaleString();
+                            return `市中残存額: ${amount}億円`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 銘柄詳細データ取得
+async function loadBondDetail(bondCode) {
+    try {
+        const response = await fetch(`/api/market-amount/bond/${bondCode}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // チャート更新
+        updateBondDetailChart(data);
+
+        // 統計情報表示
+        displayBondStatistics(data.statistics);
+
+        // 詳細カード表示
+        document.getElementById('bondDetailCard').style.display = 'block';
+        document.getElementById('bondDetailName').textContent =
+            `${data.bond_name} (${data.bond_code})`;
+
+        currentBondCode = bondCode;
+
+        showMessage(`${data.bond_name} のデータを取得しました`, 'success');
+
+    } catch (error) {
+        console.error('銘柄詳細取得エラー:', error);
+        showMessage(`銘柄コード ${bondCode} のデータ取得に失敗しました`, 'danger');
+    }
+}
+
+// チャート更新
+function updateBondDetailChart(data) {
+    const chartData = data.timeseries.map(point => ({
+        x: new Date(point.trade_date),
+        y: point.market_amount
+    }));
+
+    bondDetailChart.data.datasets = [{
+        label: '市中残存額',
+        data: chartData,
+        borderColor: '#007bff',
+        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+        fill: true,
+        tension: 0.1,
+        pointRadius: 2
+    }];
+
+    bondDetailChart.update();
+}
+
+// 統計情報表示
+function displayBondStatistics(stats) {
+    const statsHtml = `
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">最新日付</h6>
+                    <h5>${stats.latest_date}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">最新残存額</h6>
+                    <h5>${stats.latest_amount.toLocaleString()}億円</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">平均残存額</h6>
+                    <h5>${stats.avg_amount.toLocaleString()}億円</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">データ数</h6>
+                    <h5>${stats.data_points}日分</h5>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('bondStats').innerHTML = statsHtml;
+}
+
+// 銘柄一覧取得
+async function loadBondList(limit = 30) {
+    try {
+        const response = await fetch(`/api/market-amount/bonds/search?limit=${limit}`);
+        const data = await response.json();
+
+        const listHtml = data.bonds.map(bond => `
+            <div class="bond-item p-2 border-bottom" style="cursor: pointer;"
+                 onclick="loadBondDetail('${bond.bond_code}')">
+                <div class="d-flex justify-content-between">
+                    <span class="text-truncate" style="max-width: 70%;">
+                        <strong>${bond.bond_code}</strong>
+                        <br>
+                        <small class="text-muted">${bond.bond_name}</small>
+                    </span>
+                    <span class="text-end">
+                        <small>${bond.latest_market_amount.toLocaleString()}<br>億円</small>
+                    </span>
+                </div>
+            </div>
+        `).join('');
+
+        document.getElementById('bondList').innerHTML = listHtml;
+
+    } catch (error) {
+        console.error('銘柄一覧取得エラー:', error);
+        document.getElementById('bondList').innerHTML =
+            '<small class="text-danger">銘柄一覧の取得に失敗しました</small>';
     }
 }

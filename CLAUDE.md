@@ -1,30 +1,32 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
 # 国債金利分析システム (Market Analytics System)
 
-## 🎯 プロジェクト目的・目標
+## 🎯 プロジェクト概要
 
-### ビジョン
-日本国債市場の動向を高度に分析し、金利リスク管理と投資判断を支援する包括的なデータ分析プラットフォームを構築する。
+日本国債市場の動向を分析し、イールドカーブ分析・主成分分析・投資リスク管理を支援する包括的なデータ分析プラットフォーム。
 
-### 主要目標
-1. **データ収集**: JSDAから安全・確実にヒストリカルデータを収集
-2. **自動データ更新**: Cloud Run上で毎日18時自動データ収集（完了）
-3. **データ分析**: イールドカーブ分析・主成分分析等の高度な分析機能
-4. **可視化**: 直感的で操作性の高いWebアプリケーション
+**本番環境状況**: Cloud Run上でWebアプリケーションと自動データ収集システムが稼働中。毎日18:00 (JST) に自動データ更新。
 
 ## 🚨 絶対遵守ルール（開発制約）
 
-### **JSDA サーバー保護ルール**
-> **警告**: 違反は即座にプロジェクト停止の対象
+### JSDA サーバー保護ルール（必須）
+
+**警告**: 違反は即座にプロジェクト停止の対象
 
 1. **アクセス間隔**: 必ず5秒以上（推奨30秒以上）
-2. **バックグラウンド実行禁止**: `&`, `nohup` での実行禁止
+2. **バックグラウンド実行禁止**: `&`, `nohup` での実行は絶対禁止
 3. **プロセス監視必須**: データ収集前に `ps aux | grep python` で確認
 4. **明示的停止**: 完了後は必ず Ctrl+C で停止
 5. **同時実行禁止**: 複数の収集スクリプト同時実行禁止
 6. **エラー時待機**: タイムアウト時5分、一般エラー時3分待機
 7. **フォアグラウンド実行**: 必ずターミナルで直接実行・監視
 
-### **安全な実行手順（必須）**
+**安全な実行手順**:
 ```bash
 # 1. 既存プロセス確認
 ps aux | grep -E "(simple_multi_day|collect_single)" | grep -v grep
@@ -32,20 +34,303 @@ ps aux | grep -E "(simple_multi_day|collect_single)" | grep -v grep
 # 2. 既存プロセスがあれば停止
 kill [PID]
 
-# 3. フォアグラウンドで実行
-python scripts/simple_multi_day_collector.py data_files/target_dates_latest.json
+# 3. フォアグラウンドで実行（絶対にバックグラウンド実行しない）
+source venv/bin/activate && python scripts/simple_multi_day_collector.py data_files/target_dates_latest.json
 
 # 4. 完了時は Ctrl+C で停止確認
 ```
 
-### **開発ルール**
+### 開発ルール
+
 - Webアプリは直接JSDAアクセス禁止（DBアクセスのみ）
 - 新規データ収集は明示的指示時のみ
 - コード変更時のJSDA制約確認必須
 
-## 🏗️ 技術アーキテクチャ
+## 🔍 Claude Code 動作最適化ルール
 
-### **技術スタック**
+### コンテキスト使用量最適化（必須）
+
+**警告**: このプロジェクトは大規模なため、コンテキスト使用量の最適化が必須
+
+#### 1. ファイル読み込み制限
+
+**必要最小限の原則**: タスクに直接関係するファイルのみ読み込む
+
+- **大容量ファイル警告**: 500行以上のファイルを読み込む前に必要性を再確認
+- **段階的探索**: いきなり複数ファイルを読まず、1-2ファイルから開始
+
+**正しいアプローチ:**
+```bash
+# ❌ 悪い例: 無差別に複数ファイルを読み込む
+Read app/api/endpoints/market_amount.py
+Read app/api/endpoints/yield_data.py
+Read app/api/endpoints/dates.py
+Read app/core/models.py
+...（10ファイル同時読み込み）
+
+# ✅ 良い例: 段階的に必要なファイルのみ
+1. Glob "app/api/endpoints/*.py"  # まず存在確認
+2. Read app/api/endpoints/market_amount.py  # 該当ファイルのみ
+3. 必要に応じて関連ファイルを追加読み込み
+```
+
+#### 2. 探索的タスクでのツール選択
+
+**Task agent優先使用（探索的タスク）:**
+- 複数ファイルにまたがる調査が必要な場合
+- コードパターンの検索が必要な場合
+- 依存関係の追跡が必要な場合
+
+**Glob/Grep優先使用（ファイル読み込み前）:**
+- ファイル読み込み前に必ず対象を絞り込む
+- パターンマッチングで関連ファイルを特定
+- 大量のファイルから特定のコードを検索
+
+**例: データベースアクセスコードを探す場合**
+```bash
+# ❌ 悪い例: 推測で複数ファイルを読み込む
+Read app/core/database.py
+Read data/utils/database_manager.py
+Read app/services/scheduler_service.py
+...
+
+# ✅ 良い例: 検索で絞り込んでから読み込む
+1. Grep "execute_query|get_bond_data" output_mode:"files_with_matches"
+2. 結果に基づいて必要なファイルのみ Read
+```
+
+#### 3. 除外すべきディレクトリ・ファイル
+
+**常に除外（読み込み・探索禁止）:**
+- `venv/` - 仮想環境（785 MB）
+- `__pycache__/` - Pythonキャッシュファイル
+- `*.pyc` - コンパイル済みPythonファイル
+- `*.log` - ログファイル
+- `.ipynb_checkpoints/` - Jupyter Notebookチェックポイント
+- `.git/` - Gitリポジトリデータ
+
+**参照のみ（過度な読み込み禁止）:**
+- `legacy/` - 旧実装（非推奨、参照時のみ）
+- `static/` - 静的ファイル（必要時のみ）
+- `templates/` - HTMLテンプレート（必要時のみ）
+
+**注意: notebooks/ と analysis/ は除外しない:**
+- ユーザーがデータ実験で頻繁に使用するため、通常通りアクセス可能
+
+#### 4. 効率的なファイル探索パターン
+
+**パターン1: 新機能追加時**
+```bash
+# ステップ1: 既存の類似機能を探す
+Glob "app/api/endpoints/*.py"  # エンドポイント一覧確認
+Grep "class.*Endpoint|@router" output_mode:"files_with_matches" path:"app/api/endpoints"
+
+# ステップ2: 1-2ファイルのみ読み込んで実装パターンを理解
+Read app/api/endpoints/yield_data.py  # 参考実装1つのみ
+
+# ステップ3: 必要に応じて関連ファイルを追加読み込み
+Read app/core/models.py  # モデル定義が必要な場合のみ
+```
+
+**パターン2: バグ修正時**
+```bash
+# ステップ1: エラーメッセージから対象ファイルを特定
+Grep "error_message_keyword" output_mode:"files_with_matches"
+
+# ステップ2: 該当ファイルのみ読み込む
+Read /path/to/identified/file.py
+
+# ステップ3: 依存関係を段階的に追跡
+LSP goToDefinition  # 関数定義を確認
+```
+
+**パターン3: データベーススキーマ確認時**
+```bash
+# ✅ 良い例: 特定テーブルのみ検索
+Glob "scripts/sql/schema/*.sql"
+Read scripts/sql/schema/create_bond_table.sql  # 該当テーブルのみ
+
+# ❌ 悪い例: すべてのSQLファイルを読み込む
+Read scripts/sql/schema/create_bond_table.sql
+Read scripts/sql/schema/create_boj_holdings_table.sql
+...
+```
+
+#### 5. コンテキスト使用量モニタリング
+
+**自己チェックポイント:**
+- ファイル読み込み前: 「このファイルは本当に必要か？」
+- 大容量ファイル読み込み時: 「部分読み込み（offset/limit）で十分か？」
+- 複数ファイル読み込み時: 「並列読み込みが適切か、段階的に読むべきか？」
+
+**期待されるコンテキスト削減効果:**
+- venv/ 除外: 約80% 削減
+- 段階的読み込み: 約10-15% 削減
+- Glob/Grep活用: 約5-10% 削減
+
+#### 6. 長時間実行コマンドの取り扱い
+
+**警告**: 大量出力を伴う長時間実行コマンドはコンテキストを大幅に消費
+
+**基本方針: バックグラウンド自動実行を避ける**
+
+長時間実行が予想されるコマンド（5分以上、または大量の出力が予想される）は、**バックグラウンドで自動実行せず**、ユーザーに別ターミナルでの実行を提案すること。
+
+**長時間実行コマンドの例:**
+- データベース操作: `psql`による大量データインポート/エクスポート
+- データ処理: 数年分のbond_dataのバッチ処理
+- データ収集: 複数日分のJSDAデータ収集
+- ビルド・テスト: 長時間かかるビルドや統合テスト
+
+**正しいアプローチ:**
+```
+❌ 悪い例: バックグラウンドで自動実行
+Bash(command="python scripts/export_bond_data_by_year.py", run_in_background=true)
+→ 結果: 大量の出力がコンテキストを消費
+
+✅ 良い例: 別ターミナルでの実行を提案
+「このコマンドは大量の出力が予想されるため、以下を別のターミナルで実行することをお勧めします:
+
+```bash
+source venv/bin/activate
+python scripts/export_bond_data_by_year.py
+```
+
+実行が完了したらお知らせください。」
+```
+
+**判断基準:**
+- 予想実行時間が5分以上
+- 出力行数が1000行以上見込まれる
+- ループ処理で進捗を逐次出力する
+- データベースの大量レコード処理
+
+**例外（バックグラウンド実行可能）:**
+- 状態確認コマンド（`git status`, `ps aux`）
+- 短時間テスト（`pytest`単一ファイル）
+- 軽量ビルド（`tsc`など）
+
+### 自動承認ルール（リスクベース分類）
+
+このセクションでは、確認頻度とコード品質のバランスを取るための自動承認ポリシーを定義します。
+
+#### 基本原則
+
+1. **Plan-First Approach**: 中規模以上のタスクは必ずEnterPlanModeで計画を提示
+2. **Read-Heavy, Write-Light**: 読み取り操作は積極的に、書き込みは慎重に
+3. **Fail-Safe Design**: 不確実な場合は必ず確認を求める
+
+#### ✅ 自動承認可能（Low Risk）
+
+**読み取り専用操作**:
+- ファイル読み込み: `Read`, `Glob`, `Grep`
+- データベース読み込み: `SELECT` クエリのみ
+- ログ確認: `gcloud logging read`
+- 状態確認: `git status`, `ps aux`, `gcloud ... list/describe`
+- Web検索・フェッチ: `WebSearch`, `WebFetch`
+
+**非破壊的な開発操作**:
+- ブランチ作成: `git checkout -b feature/*`
+- 依存関係インストール: `pip install` (venv内)
+- ローカルテスト実行: `pytest`, `python -m unittest`
+- ローカルサーバー起動: `uvicorn`（ポート8000-9000）
+
+**制限付き書き込み**:
+- 新規ファイル作成: `scripts/`, `analysis/`, `notebooks/` 内のみ
+- ドキュメント更新: `*.md` ファイル（CLAUDE.md除く）
+- テストファイル: `test_*.py`, `*_test.py`
+
+#### ⚠️ 条件付き承認（Medium Risk）
+
+**承認条件: EnterPlanMode で事前計画承認済み**
+
+- 既存コード修正: `app/`, `data/` ディレクトリ内
+- データベーススキーマ変更: `scripts/sql/schema/` 内
+- 設定ファイル変更: `requirements.txt`, `.env.example`
+- Gitコミット: 変更内容を提示後
+
+#### 🛑 必須承認（High Risk）
+
+**常に明示的承認が必要**:
+
+**本番環境操作**:
+- Cloud Runデプロイ: `gcloud run deploy`
+- Cloud Schedulerジョブ変更: `gcloud scheduler jobs update/create`
+- 本番環境変数変更: `gcloud run services update --set-env-vars`
+- Git push: `git push origin main`
+
+**データ操作**:
+- JSDAデータ収集実行: `python scripts/*_collector.py`
+- データベース削除・更新: `DELETE`, `UPDATE`, `DROP`
+- データベースRPC変更: `scripts/sql/create_*_rpc.sql` 実行
+
+**破壊的変更**:
+- ファイル・ディレクトリ削除: `rm`, `git rm`
+- Git履歴変更: `git rebase`, `git reset --hard`
+- アーキテクチャ変更: 3層構造に影響する変更
+- CLAUDE.md修正: プロジェクト指針の変更
+
+**セキュリティ影響**:
+- `.env` ファイル操作
+- RLSポリシー変更
+- 認証・認可ロジック変更
+
+#### 実践的ワークフロー例
+
+**シナリオA: 新機能追加（中〜大規模）**
+```
+1. [自動] EnterPlanMode で調査・設計
+2. [手動承認] 実装計画を確認
+3. [自動] コード実装（複数ファイル編集）
+4. [自動] テスト実行
+5. [手動承認] Gitコミット内容確認
+6. [手動承認] デプロイ実行
+```
+
+**シナリオB: バグ修正（小規模）**
+```
+1. [自動] ファイル検索・読み込み
+2. [自動] 原因特定
+3. [自動] 修正実装（1-2ファイル）
+4. [自動] テスト実行
+5. [手動承認] Gitコミット
+```
+
+**シナリオC: データ分析実験**
+```
+1. [自動] データベースからデータ取得
+2. [自動] notebooks/ に分析スクリプト作成
+3. [自動] 分析実行
+4. [自動] 結果の可視化
+（承認不要 - 読み取り専用）
+```
+
+#### 自動実行フロー
+
+**条件を満たす場合、確認なしで実行可能**:
+- 上記「自動承認可能（Low Risk）」に該当
+- EnterPlanMode承認済みタスクの実装フェーズ
+- 失敗してもrollback可能な操作
+
+**確認を求めるべきタイミング**:
+- 本番環境に影響
+- データ削除・更新
+- アーキテクチャ変更
+- セキュリティに影響
+- JSDAサーバーアクセス
+
+#### 実装時の自己チェック
+
+各操作前に以下を確認:
+1. この操作はリスク分類のどれに該当？
+2. EnterPlanModeで承認済み？
+3. 失敗時のrollback方法は？
+4. 本番環境に影響する？
+
+## 🏗️ アーキテクチャ
+
+### 技術スタック
+
 - **言語**: Python 3.9+
 - **データベース**: Supabase (PostgreSQL)
 - **Webフレームワーク**: FastAPI + Jinja2
@@ -55,93 +340,10 @@ python scripts/simple_multi_day_collector.py data_files/target_dates_latest.json
 - **自動化**: Cloud Scheduler, Cloud Run
 - **祝日判定**: jpholiday
 
-### **プロジェクト構造**
+### 3層アーキテクチャ
 
-> **重要**: このディレクトリ構造は現在のアーキテクチャの根幹であり、変更不可
+**重要**: このディレクトリ構造は現在のアーキテクチャの根幹 - 変更不可
 
-```
-market-analytics-ver1/
-├── 📁 app/                     # ✅ Webアプリケーション (Production Ready)
-│   ├── web/
-│   │   └── main.py            # 🔵 統一エントリーポイント (ローカル & Cloud Run共通)
-│   ├── api/                   # FastAPI エンドポイント
-│   │   ├── endpoints/         # health, dates, yield_data, scheduler
-│   │   └── main.py            # API専用エントリーポイント (Legacy)
-│   ├── services/              # ビジネスロジック層
-│   │   └── scheduler_service.py  # スケジューラーサービス
-│   ├── core/                  # 設定・共通機能
-│   │   ├── config.py          # 環境設定管理
-│   │   ├── database.py        # データベース接続
-│   │   └── models.py          # Pydanticモデル
-│   └── models/                # データモデル
-│
-├── 📁 data/                    # ✅ 共通関数ライブラリ (Production Ready)
-│   ├── processors/            # データ処理・変換
-│   │   └── bond_data_processor.py  # JSDA データ処理
-│   ├── utils/                 # ユーティリティ
-│   │   ├── database_manager.py     # Supabase DB操作
-│   │   └── jsda_parser.py          # JSDA パーサー
-│   ├── collectors/            # データ収集機能
-│   │   ├── bond_collector.py
-│   │   └── historical_bond_collector.py
-│   └── validators/            # データ検証
-│
-├── 📁 scripts/                 # ✅ 実行スクリプト (Production Ready)
-│   ├── simple_multi_day_collector.py  # 複数日データ収集
-│   ├── collect_single_day.py  # 単日データ収集
-│   ├── daily_collector.py     # 日次自動収集
-│   ├── run_local.py           # ローカル開発サーバー起動
-│   └── run_production.py      # 本番環境サーバー起動
-│
-├── 📁 analysis/                # ✅ ローカル分析スクリプト (Research Ready)
-│   ├── yield_curve_analyzer.py      # イールドカーブ分析
-│   ├── principal_component_analysis.py  # PCA分析
-│   ├── interactive_pca_analysis.py  # インタラクティブPCA分析
-│   ├── simple_pca_demo.py     # PCA デモスクリプト
-│   └── ml/                    # 機械学習実験
-│
-├── 📁 notebooks/               # 📋 分析実験用 (Future)
-│   ├── exploration/           # 探索的データ分析
-│   ├── modeling/              # モデリング実験
-│   └── reports/               # レポート生成
-│
-├── 📁 templates/               # ✅ Webアプリ HTML テンプレート
-│   ├── base.html              # ベーステンプレート
-│   ├── dashboard.html         # ダッシュボード
-│   ├── yield_curve.html       # イールドカーブ画面
-│   └── pca.html               # PCA分析画面
-│
-├── 📁 static/                  # ✅ Webアプリ静的ファイル
-│   ├── css/                   # スタイルシート
-│   ├── js/                    # JavaScript
-│   └── images/                # 画像アセット
-│
-├── 📁 data_files/              # ✅ 設定ファイル
-│   └── target_dates_latest.json  # データ収集対象日付
-│
-├── 📁 legacy/                  # 🔄 旧実装 (非推奨)
-│   └── frontend/              # Streamlitアプリ
-│
-└── 📁 tests/                   # 📋 テストスイート (Future)
-```
-
-### **アーキテクチャ設計原則**
-
-#### **1. 統一エントリーポイント**
-```python
-# ローカル開発・本番環境統一 (Production Ready)
-app/web/main.py
-→ FastAPI + Jinja2 統合アプリケーション
-→ Webアプリ + API + スケジューラー機能を統合
-→ ローカル: python -m app.web.main
-→ Cloud Run: uvicorn app.web.main:app (Dockerfileで起動)
-
-# スケジューラーエンドポイント (app/web/main.py に統合済み)
-→ Cloud Scheduler → POST /api/scheduler/daily-collection
-→ GET /api/scheduler/status
-```
-
-#### **2. 機能分離の3層構造**
 ```
 【プレゼンテーション層】
 app/ + templates/ + static/
@@ -154,186 +356,49 @@ data/
 → 再利用可能なコア関数群
 → データ収集・処理・DB操作の根本的機能
 → app/, scripts/, analysis/ から呼び出される
-→ processors/ : データ処理
-→ utils/ : データベース操作
-→ collectors/ : データ収集
+→ processors/: データ処理
+→ utils/: データベース操作
+→ collectors/: データ収集
 
 【実行・分析層】
-scripts/ : バッチ処理・運用スクリプト
-analysis/ : ローカル分析スクリプト
-notebooks/ : Jupyter Notebook実験（将来）
+scripts/: バッチ処理・運用スクリプト
+analysis/: ローカル分析スクリプト
+notebooks/: Jupyter Notebook実験（将来）
 ```
 
-#### **3. データ収集の実行方法**
+### 統一エントリーポイント
+
+**本番環境 & ローカル開発**: `app/web/main.py`
+- FastAPI + Jinja2 統合アプリケーション
+- Web UI + API + スケジューラー機能を統合
+- ローカル: `uvicorn app.web.main:app --reload --host 0.0.0.0 --port 8000`
+- Cloud Run: `uvicorn app.web.main:app` (Dockerfileで起動)
+
+### データ収集フロー
+
+**ローカル手動収集**（開発・テスト用）:
 ```bash
-# ローカル手動収集 (開発・テスト)
+source venv/bin/activate
 python scripts/simple_multi_day_collector.py data_files/target_dates_latest.json
-
-# 本番自動収集 (Cloud Run + Cloud Scheduler)
-Cloud Scheduler → app/web/main.py (POST /api/scheduler/daily-collection)
-→ app/services/scheduler_service.py を使用
-→ 内部で data/processors/bond_data_processor.py を呼び出し
-→ data/utils/database_manager.py でDB保存
-→ 毎日18:00自動実行
 ```
 
-## ✅ 完成機能一覧
-
-### **1. データ収集システム (Production Ready)**
-- **単日収集**: `scripts/collect_single_day.py`
-- **複数日収集**: `scripts/simple_multi_day_collector.py`
-- **JSDA保護機能**: タイムアウト検出、自動リトライ、適切な間隔制御
-- **データ処理**: J列 (interest_payment_date) MM/DD形式対応
-- **エラーハンドリング**: 詳細ログ、プロセス監視、安全停止
-
-### **2. Webアプリケーション (Production Ready)**
-```bash
-# 推奨: 統合Webアプリ (ローカル & 本番共通)
-python -m app.web.main
-# → http://127.0.0.1:8000
-
-# または uvicorn経由
-uvicorn app.web.main:app --reload --host 0.0.0.0 --port 8000
+**本番自動収集**（Cloud Run + Cloud Scheduler）:
 ```
-
-**主要機能:**
-- 📊 **ダッシュボード**: インタラクティブなイールドカーブ表示
-- 📈 **時系列ナビゲーション**: 日付選択による過去データ閲覧
-- 🔄 **リアルタイム更新**: Chart.js による動的グラフ更新
-- 📱 **レスポンシブ対応**: Bootstrap ベースのモバイル対応UI
-
-**API エンドポイント:**
-- `GET /api/dates` - 利用可能日付一覧
-- `GET /api/yield-curve/{date}` - 指定日のイールドカーブデータ
-- `GET /api/compare` - 複数日比較データ
-- `GET /health` - ヘルスチェック
-
-### **3. データ分析エンジン (Core Complete)**
-- **イールドカーブ分析**: `analysis/yield_curve_analyzer.py`
-- **期間別分類**: 短期・中期・長期債の自動分類
-- **統計分析**: 基本統計量、トレンド分析
-- **多項式フィッティング**: 曲線の平滑化と補間
-
-### **4. データベース管理 (Production Ready)**
-- **Supabase統合**: PostgreSQL クラウドDB
-- **スキーマ管理**: bond_data テーブル (123,000+ レコード)
-- **データ整合性**: 重複排除、型検証
-- **バッチ処理**: 高効率な一括挿入・更新
-
-### **5. 自動データ収集システム (Production Ready)**
-```bash
-# Cloud Scheduler → Cloud Run → JSDA → Supabase DB
-# 毎日18:00 (JST) 自動実行
+Cloud Scheduler (毎日18:00 JST)
+  ↓
+POST /api/scheduler/daily-collection
+  ↓
+app/services/scheduler_service.py
+  ↓
+data/processors/bond_data_processor.py
+  ↓
+data/utils/database_manager.py → Supabase DB
 ```
-
-**主要機能:**
-- 🕰️ **スケジュール実行**: Cloud Scheduler による毎日18時自動実行
-- 📅 **祝日判定**: jpholiday による日本の祝日・土日自動スキップ
-- 🏢 **Cloud Run統合**: サーバーレス環境での安定実行
-- 🔒 **セキュリティ**: Cloud Schedulerからのリクエストのみ受付
-- ⚡ **エラーハンドリング**: タイムアウト・リトライ・安全チェック完備
-- 📊 **ログ管理**: 詳細な実行ログと結果追跡
-
-**API エンドポイント:**
-- `POST /api/scheduler/daily-collection` - 日次データ収集実行（Cloud Scheduler専用）
-- `GET /api/scheduler/status` - スケジューラー状態確認
-
-**Cloud Scheduler設定:**
-- **ジョブ名**: `daily-data-collection`
-- **実行時刻**: 毎日18:00 (Asia/Tokyo)
-- **対象URL**: `https://market-analytics-646409283435.asia-northeast1.run.app`
-- **リトライ**: 自動リトライ機能付き
-
-## 🗓️ 開発ロードマップ
-
-### **Epic 1: データ収集・基盤システム** ✅ **完了**
-#### Feature 1.1: JSDA データ収集システム ✅
-- Story 1.1.1: 単日データ収集機能 ✅
-- Story 1.1.2: 複数日データ収集機能 ✅
-- Story 1.1.3: JSDAサーバー保護機能 ✅
-- Story 1.1.4: エラーハンドリング・リトライ機能 ✅
-
-#### Feature 1.2: データベース設計・管理 ✅
-- Story 1.2.1: Supabase プロジェクト構築 ✅
-- Story 1.2.2: テーブルスキーマ設計 ✅
-- Story 1.2.3: データ挿入・更新システム ✅
-- Story 1.2.4: J列形式変更対応 (MM/DD) ✅
-
-### **Epic 2: Webアプリケーション基盤** ✅ **完了**
-#### Feature 2.1: FastAPI + Jinja2 基盤 ✅
-- Story 2.1.1: FastAPI アプリケーション構築 ✅
-- Story 2.1.2: Jinja2 テンプレートエンジン統合 ✅
-- Story 2.1.3: Bootstrap UI フレームワーク ✅
-- Story 2.1.4: 静的ファイル配信システム ✅
-
-#### Feature 2.2: API エンドポイント ✅
-- Story 2.2.1: 日付一覧取得 API ✅
-- Story 2.2.2: イールドカーブデータ API ✅
-- Story 2.2.3: データ比較 API ✅
-- Story 2.2.4: ヘルスチェック API ✅
-
-### **Epic 3: 可視化・UI システム** ✅ **完了**
-#### Feature 3.1: イールドカーブ可視化 ✅
-- Story 3.1.1: Chart.js 統合 ✅
-- Story 3.1.2: インタラクティブグラフ ✅
-- Story 3.1.3: 時系列ナビゲーション ✅
-- Story 3.1.4: レスポンシブデザイン ✅
-
-### **Epic 4: 高度分析機能** 🔄 **進行中**
-#### Feature 4.1: イールドカーブ分析 ✅
-- Story 4.1.1: 基本統計分析 ✅
-- Story 4.1.2: 期間別分類システム ✅
-- Story 4.1.3: トレンド分析 ✅
-- Story 4.1.4: 多項式フィッティング ✅
-
-#### Feature 4.2: 主成分分析 ✅ **ローカル完成** / 📋 **Web統合計画中**
-- Story 4.2.1: PCA アルゴリズム実装 ✅
-  - Task: sklearn PCA モジュール統合 ✅
-  - Task: 次元削減パラメータ調整 ✅
-  - Task: 固有ベクトル解釈システム ✅
-  - ✅ 実装済み: `analysis/principal_component_analysis.py`
-  - ✅ デモ実装: `analysis/simple_pca_demo.py`
-  - ✅ インタラクティブ版: `analysis/interactive_pca_analysis.py`
-- Story 4.2.2: 主成分可視化 ✅ (ローカル)
-  - Task: 主成分寄与率グラフ ✅
-  - Task: 固有ベクトル表示 ✅
-  - Task: 時系列主成分変化 ✅
-- Story 4.2.3: Web UI 統合 📋 (計画中)
-  - Task: PCA結果をDBから取得するAPIエンドポイント
-  - Task: `templates/pca.html` の実装強化
-  - Task: インタラクティブグラフ統合 (Chart.js)
-  - Task: レポート出力機能
-
-#### Feature 4.3: 予測・機械学習 📋 **将来計画**
-- Story 4.3.1: 時系列予測モデル
-- Story 4.3.2: 異常検知システム
-- Story 4.3.3: リスク指標計算
-
-### **Epic 5: 運用・自動化** ✅ **完了**
-#### Feature 5.1: 自動データ更新 ✅
-- Story 5.1.1: 日次バッチ処理 ✅
-  - Task: Cloud Scheduler設定 ✅
-  - Task: 祝日判定システム ✅
-  - Task: エラーハンドリング・リトライ ✅
-- Story 5.1.2: 自動品質チェック ✅
-  - Task: データ収集前安全確認 ✅
-  - Task: プロセス監視機能 ✅
-- Story 5.1.3: ログ・監視システム ✅
-  - Task: 詳細実行ログ ✅
-  - Task: Cloud Logging統合 ✅
-
-#### Feature 5.2: 本番環境デプロイ ✅
-- Story 5.2.1: クラウド環境構築 ✅
-  - Task: Cloud Run サービス構築 ✅
-  - Task: カスタムドメイン設定 ✅
-  - Task: SSL証明書設定 ✅
-- Story 5.2.2: 運用監視システム ✅
-  - Task: ヘルスチェックAPI ✅
-  - Task: Cloud Logging統合 ✅
 
 ## 🔧 開発コマンド
 
-### **環境構築**
+### 環境構築
+
 ```bash
 # 仮想環境の作成と有効化（必須）
 python3 -m venv venv
@@ -341,54 +406,58 @@ source venv/bin/activate
 
 # 依存関係のインストール
 pip install -r requirements.txt
-cp .env.example .env  # 環境変数を設定
+
+# 環境変数を設定
+cp .env.example .env
+# .env ファイルを編集してSupabase認証情報を入力
 ```
 
-### **仮想環境ルール（必須）**
-> **重要**: Pythonコードの実行は必ず仮想環境内で行うこと
+### 仮想環境ルール（必須）
 
-1. **仮想環境の有効化**: スクリプト実行前に `source venv/bin/activate`
-2. **グローバル環境汚染禁止**: `pip install` はvenv内でのみ実行
-3. **Claude Codeによる自動実行**: 必ず `source venv/bin/activate &&` を前置
+**重要**: Pythonコードの実行は必ず仮想環境内で行うこと
+
+1. 実行前に有効化: `source venv/bin/activate`
+2. グローバル環境へのpip install禁止 - venv内でのみ実行
+3. Claude Codeは必ずプレフィックス: `source venv/bin/activate && python3 script.py`
 
 ```bash
-# 正しい実行方法
-source venv/bin/activate && python3 scripts/xxx.py
+# ✅ 正しい実行方法
+source venv/bin/activate && python3 scripts/collect_single_day.py
 
-# 間違った実行方法（禁止）
-python3 scripts/xxx.py  # グローバル環境で実行される
+# ❌ 間違った実行方法（グローバル環境を汚染する）
+python3 scripts/collect_single_day.py
 ```
 
-### **アプリケーション起動**
+### アプリケーション起動
+
 ```bash
-# 推奨: 統合Webアプリ (ローカル & 本番共通)
-python -m app.web.main
+# Webアプリ起動（統一エントリーポイント）
+source venv/bin/activate
+uvicorn app.web.main:app --reload --host 0.0.0.0 --port 8000
 # → http://127.0.0.1:8000
 
-# または uvicorn経由 (開発時)
-uvicorn app.web.main:app --reload --host 0.0.0.0 --port 8000
-
 # ローカル分析スクリプト実行
-python analysis/simple_pca_demo.py           # PCA分析デモ
-python analysis/yield_curve_analyzer.py       # イールドカーブ分析
-
-# Legacy
-streamlit run legacy/frontend/streamlit_app.py  # (非推奨)
+source venv/bin/activate
+python analysis/simple_pca_demo.py              # PCA分析デモ
+python analysis/yield_curve_analyzer.py         # イールドカーブ分析
 ```
 
-### **データ収集 (要注意: JSDA保護ルール遵守)**
+### データ収集（JSDA保護ルール適用）
+
 ```bash
-# 手動データ収集（開発・テスト用）
+# 手動データ収集（開発・テスト用のみ）
 # 必須: プロセス確認
 ps aux | grep python
 
-# 安全な実行
+# 安全な実行（& や nohup は絶対に使用しない）
+source venv/bin/activate
 python scripts/simple_multi_day_collector.py data_files/target_dates_latest.json
 ```
 
-### **自動データ収集管理**
+### Cloud Scheduler管理
+
 ```bash
-# Cloud Scheduler ジョブ管理
+# スケジューラージョブ一覧
 gcloud scheduler jobs list --location="asia-northeast1"
 
 # 手動実行（テスト用）
@@ -401,43 +470,14 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 curl https://market-analytics-646409283435.asia-northeast1.run.app/api/scheduler/status
 ```
 
-### **開発支援**
-```bash
-# テスト実行 (Future)
-pytest tests/
-
-# コードフォーマット (Future)
-black webapp/ data/ analysis/
-flake8 webapp/ data/ analysis/
-```
-
-## 📊 データソース
-
-### **JSDA (日本証券業協会)**
-- **URL**: https://market.jsda.or.jp/shijyo/saiken/baibai/baisanchi/
-- **形式**: CSV/Excel (自動CSV選択)
-- **更新**: 毎日17:30頃 (一部18:30)
-- **履歴**: 2002年からのデータ利用可能
-- **制約**: アクセス間隔5秒以上必須
-
-### **データベース現状**
-- **レコード数**: 123,000+ 件
-- **対象期間**: 2002年〜現在
-- **主要フィールド**: 
-  - trade_date (取引日)
-  - interest_payment_date (利払日: MM/DD形式)
-  - yield_rate (利回り)
-  - maturity_years (残存年数)
-
 ## ⚙️ 環境変数設定
 
-> **🚨 セキュリティ警告**
-> - `.env`ファイルは**絶対にGitHubにコミットしない**
-> - `.gitignore`に`.env`が含まれていることを確認済み
-> - `SUPABASE_KEY`は**Service Role Key**を使用（全操作権限）
-> - Service Role Keyは**秘密情報**として厳重に管理
+**セキュリティ警告**:
+- `.env` ファイルは絶対にGitにコミットしない（`.gitignore`参照）
+- `SUPABASE_KEY` は**Service Role Key**を使用（全操作権限）
+- Service Role Keyは機密情報として厳重に管理
 
-`.env`ファイルに以下を設定:
+必須の `.env` 設定:
 ```env
 # Supabase 設定
 SUPABASE_URL=your_supabase_project_url
@@ -448,85 +488,227 @@ DEBUG=True
 LOG_LEVEL=INFO
 ```
 
-### **データベース接続設計**
+### データベース接続設計
 
-**v3.1での設計変更（2025-10-16）:**
-- **単一キー設計**: Service Role Key のみ使用
+**v3.1での設計変更（2025-10-16）**:
+- **単一キー設計**: Service Role Keyのみ使用
 - **全操作統一**: Webアプリ・データ収集・スケジューラーすべてで同一キー
-- **セキュリティ**: Cloud Run内部からのアクセスのみ許可（RLSで追加保護）
+- **セキュリティ**: Cloud Run内部からのアクセスのみ許可 + RLS保護層
 
-**理由:**
-1. **本番環境はCloud Run内部** → 外部公開されない信頼環境
-2. **RLS設定済み** → 万が一の保護層が存在
-3. **シンプル化** → 環境変数1つで管理が容易
-4. **ローカル・本番統一** → 同じコードが両環境で動作
+**理由**:
+1. 本番環境はCloud Run内部 → 信頼された環境
+2. RLS設定済み → 追加の保護層が存在
+3. シンプル化 → 環境変数1つで管理が容易
+4. ローカル・本番統一 → 同じコードが両環境で動作
 
-**本プロジェクトの使用:**
-- **Webアプリ**: Service Role Key（app/core/database.py）
-- **データ収集スクリプト**: Service Role Key（data/utils/database_manager.py）
-- **Cloud Run自動収集**: Service Role Key（環境変数で設定）
+**使用箇所**:
+- Webアプリ: Service Role Key（`app/core/database.py`）
+- データ収集スクリプト: Service Role Key（`data/utils/database_manager.py`）
+- Cloud Run自動収集: Service Role Key（環境変数で設定）
 
-## 📈 プロジェクト状況
+## 📊 データソース
 
-### **完成度**
-- **データ収集**: 100% (Production Ready)
-- **自動データ更新**: 100% (Production Ready)
-- **Webアプリ基盤**: 100% (Production Ready)
-- **基本分析**: 100% (イールドカーブ)
-- **高度分析 (ローカル)**: 80% (PCA分析実装済み)
-- **高度分析 (Web統合)**: 10% (PCA Web UI計画中)
-- **運用・監視**: 100% (Production Ready)
+### JSDA（日本証券業協会）
 
-### **次のマイルストーン**
-1. **PCA分析Web統合** (Epic 4, Feature 4.2.3)
-   - 優先度: 高
-   - 期間: 1-2週間
-   - 内容: ローカルPCA分析をWebアプリに統合
-   - 成果物:
-     - `app/api/endpoints/pca.py` - PCA APIエンドポイント
-     - `templates/pca.html` の強化
-     - Chart.js による主成分可視化
+- **URL**: https://market.jsda.or.jp/shijyo/saiken/baibai/baisanchi/
+- **形式**: CSV/Excel（自動CSV選択）
+- **更新**: 毎日17:30頃（一部18:30）
+- **履歴**: 2002年からのデータ利用可能
+- **制約**: アクセス間隔5秒以上必須
 
-2. **予測モデル検討** (Epic 4, Feature 4.3)
-   - 優先度: 中
-   - 期間: 4-6週間
-   - 内容: 時系列予測・異常検知モデル
-   - 担当: ML パイプライン構築
+### データベース現状
 
-### **技術的負債**
-- Frontend Streamlit コード整理 (優先度: 低)
-- テストスイート未実装 (優先度: 中)
-- エラー処理の標準化 (優先度: 低)
+- **レコード数**: 123,000+件
+- **対象期間**: 2002年〜現在
+- **主要フィールド**:
+  - `trade_date` (取引日)
+  - `interest_payment_date` (利払日: MM/DD形式)
+  - `yield_rate` (利回り)
+  - `maturity_years` (残存年数)
 
----
+## 🔑 主要ファイル & アーキテクチャ
 
-## 📝 最終更新
+### エントリーポイント
+
+- **Webアプリ**: `app/web/main.py` - ローカル & Cloud Run統一エントリーポイント
+- **APIエンドポイント**: `app/api/endpoints/` - FastAPIルートハンドラー
+- **スケジューラーサービス**: `app/services/scheduler_service.py` - 自動収集ロジック
+
+### コアライブラリ（再利用可能）
+
+- **データベースマネージャー（非同期）**: `app/core/database.py` - Web API用（FastAPI async）
+- **データベースマネージャー（同期）**: `data/utils/database_manager.py` - スクリプト/バッチ用
+- **国債データプロセッサー**: `data/processors/bond_data_processor.py` - JSDAデータ処理
+- **JSDAパーサー**: `data/utils/jsda_parser.py` - JSDAフォーマットパーサー
+
+### データ収集スクリプト
+
+- **複数日収集**: `scripts/simple_multi_day_collector.py` - 複数日のデータ収集
+- **単日収集**: `scripts/collect_single_day.py` - 単日のデータ収集
+- **重要**: 両方ともJSDAサーバー保護ルールを遵守
+
+### 設定ファイル
+
+- **アプリ設定**: `app/core/config.py` - pydantic-settingsによる環境設定
+- **対象日付**: `data_files/target_dates_latest.json` - 収集対象日付
+- **依存関係**: `requirements.txt` - 統一された依存関係（ローカル & Cloud Run）
+
+### デプロイメント
+
+- **Dockerfile**: Cloud Runデプロイメント設定
+- **Cloud Scheduler**: 毎日自動実行（18:00 JST）
+- **サービス**: Cloud Run（asia-northeast1）の `market-analytics`
+
+## 📈 APIエンドポイント
+
+### Webページ
+- `GET /` - ホームページ
+- `GET /yield-curve` - イールドカーブ比較画面
+- `GET /pca` - PCA分析画面
+- `GET /market-amount` - 市中残存額可視化画面
+
+### APIルート
+- `GET /health` - ヘルスチェック
+- `GET /api/dates` - 利用可能な取引日一覧
+- `GET /api/yield-curve/{date}` - 指定日のイールドカーブデータ
+- `GET /api/compare` - 複数日比較データ
+- `POST /api/scheduler/daily-collection` - データ収集実行（Cloud Schedulerのみ）
+- `GET /api/scheduler/status` - スケジューラー状態確認
+
+## 🎯 現在の状況 & ロードマップ
+
+### 完成度
+
+- **データ収集**: 100%（本番稼働中）
+- **自動データ更新**: 100%（本番稼働中）
+- **Webアプリ基盤**: 100%（本番稼働中）
+- **基本分析**: 100%（イールドカーブ）
+- **高度分析（ローカル）**: 80%（PCA分析実装済み）
+- **高度分析（Web統合）**: 10%（PCA Web UI計画中）
+- **運用・監視**: 100%（本番稼働中）
+
+### 次のマイルストーン
+
+**PCA分析Web統合**（優先度: 高）
+- バックエンド: `app/api/endpoints/pca.py` - PCA APIエンドポイント
+- フロントエンド: `templates/pca.html` の強化
+- 可視化: Chart.jsによる主成分の可視化
+
+## 🔒 セキュリティ & ベストプラクティス
+
+### 環境変数
+- `.env` ファイルには機密データを含む（Git除外済み）
+- `.env.example` は設定テンプレート（Git管理対象）
+- 本番環境では環境変数またはセキュアな設定管理を使用
+
+### コード品質
+- 2つのデータベースマネージャー: Web API用は非同期（`app/core/`）、スクリプト用は同期（`data/utils/`）
+- 非同期/同期のデータベース操作を混在させない
+- 常に仮想環境を使用
+- JSDAサーバー保護ルールを厳格に遵守
+
+### JSDAアクセス制約
+- **必須間隔**: 30秒以上
+- **実行モード**: フォアグラウンドのみ（バックグラウンド禁止）
+- **監視**: プロセス確認とCtrl+C終了
+- **エラー処理**: タイムアウト時5分待機、エラー時3分待機
+
+## 💡 開発のヒント
+
+### 新機能追加時
+
+1. **コアライブラリを再利用**: まず `data/` ディレクトリで既存機能を確認
+2. **アーキテクチャに従う**: 3層分離（プレゼンテーション/ライブラリ/実行）を維持
+3. **データベースアクセス**: `app/` では非同期版、`scripts/` では同期版を使用
+4. **JSDAルール**: データ収集に関わる場合は、JSDA保護制約を確認
+
+### 一般的なパターン
+
+**Web APIエンドポイント**（非同期）:
+```python
+from app.core.database import db_manager
+
+async def get_data():
+    result = await db_manager.execute_query("bond_data", params)
+    return result
+```
+
+**スクリプト/バッチ**（同期）:
+```python
+from data.utils.database_manager import DatabaseManager
+
+db = DatabaseManager()
+result = db.get_bond_data(params)
+```
+
+### Cloud Runをローカルでテスト
+
+```bash
+# Dockerイメージをビルド
+docker build -t market-analytics .
+
+# コンテナを実行
+docker run -p 8080:8080 \
+  -e SUPABASE_URL="your_url" \
+  -e SUPABASE_KEY="your_key" \
+  market-analytics
+```
+
+## 📝 バージョン履歴
+
+### v3.5 (2025-12-27)
+- **更新者**: Claude Code Assistant
+- **変更内容**:
+  - **長時間実行コマンドの取り扱いルール追加**
+    - バックグラウンド自動実行によるコンテキスト消費を防止
+    - 大量出力が予想されるコマンドは別ターミナル実行を提案
+    - 判断基準の明確化（実行時間5分以上、出力1000行以上）
+    - データベース操作、データ処理、ビルドなどの具体例
+  - **期待される効果**:
+    - コンテキスト使用量: 大幅削減（長時間タスク時）
+    - 会話の継続性: 向上
+    - ユーザー体験: 明示的な進捗確認が可能
+
+### v3.4 (2025-12-27)
+- **更新者**: Claude Code Assistant
+- **変更内容**:
+  - **自動承認ルール追加（リスクベース分類）**
+    - 3段階リスク分類: Low / Medium / High Risk
+    - Plan-First Approach による効率的な開発フロー
+    - 実践的ワークフロー例（新機能追加、バグ修正、データ分析）
+    - 自動実行可能な操作と必須承認操作の明確化
+  - **期待される効果**:
+    - 確認回数: 約50-70%削減（読み取り・分析タスク）
+    - 安全性: High Risk操作は必ず確認
+    - 生産性: EnterPlanModeで一括承認後は高速実装
+
+### v3.3 (2025-12-27)
+- **更新者**: Claude Code Assistant
+- **変更内容**:
+  - **コンテキスト使用量最適化ルール追加**
+    - ファイル読み込み制限ガイドライン
+    - Task agent / Glob / Grep 活用推奨
+    - 除外すべきディレクトリ・ファイルの明示
+    - 効率的な探索パターンの具体例
+  - **ファイルクリーンアップ**
+    - logs/ ディレクトリ削除（1.1 MB）
+    - data_files/archive/ ディレクトリ削除（268 KB）
+    - プロジェクト内 __pycache__ ディレクトリ削除（約120 KB）
+  - **notebooks/ と analysis/ は除外せず**
+    - データ実験で頻繁に使用するため通常通りアクセス可能
+
+### v3.2 (2025-12-21)
+- `bond_data` と `boj_holdings` テーブルにRow Level Security (RLS)ポリシー設定
+- セキュリティスクリプト: `scripts/sql/security/setup_rls_policies.sql`
+- スキーマファイルにRLSポリシー追加
+- ドキュメント修正
 
 ### v3.1 (2025-10-16)
-- **更新者**: Claude Code Assistant
-- **変更内容**:
-  - **データベース接続を単一キー設計に統一**
-    - `SUPABASE_ANON_KEY`を廃止、`SUPABASE_KEY`（Service Role Key）のみ使用
-    - `app/core/config.py`: 環境変数定義を簡素化
-    - `app/core/database.py`: `DatabaseManager`を単一キー対応に変更
-  - **Dockerfileの修正**
-    - `COPY src/` → `COPY data/` に変更（ディレクトリ構造の変更に対応）
-  - **.dockerignoreの最適化**
-    - `data/`を除外リストから削除（必要なディレクトリ）
-    - `scripts/`, `analysis/`を除外リスト追加（Cloud Run不要）
-  - **Cloud Run環境変数の更新**
-    - Service Role Keyに統一（全操作対応）
-  - **検証スクリプトの削除**
-    - 一時的な検証スクリプト4件を削除（コードベースのクリーンアップ）
+- 単一Service Role Key設計への統一
+- データベース接続の簡素化
+- Dockerfileとデプロイメントの最適化
 
 ### v3.0 (2025-10-05)
-- **更新者**: Claude Code Assistant
-- **変更内容**:
-  - `src/`ディレクトリの削除（`data/`に統一）
-  - `deployments/`ディレクトリの削除（Dead Code除去）
-  - エントリーポイントを`app/web/main.py`に統一
-  - プロジェクト構造を3層アーキテクチャに明確化
-    - プレゼンテーション層: `app/`
-    - 共通関数ライブラリ層: `data/`
-    - 実行・分析層: `scripts/`, `analysis/`, `notebooks/`
-  - 依存関係の整理と最適化
+- ディレクトリ構造の統一（`src/` → `data/`）
+- 3層アーキテクチャの明確化
+- エントリーポイントを `app/web/main.py` に統一

@@ -104,3 +104,43 @@ class MarketAmountResponse(BaseModel):
     total_amount: float = Field(..., description="総市中残存額 (億円)")
     bond_count: int = Field(..., description="対象銘柄数")
     error: Optional[str] = Field(None, description="エラーメッセージ")
+
+
+class BondTimeseriesPoint(BaseModel):
+    """時系列データポイント"""
+    trade_date: str = Field(..., description="取引日 (YYYY-MM-DD)")
+    market_amount: float = Field(..., description="市中残存額 (億円)")
+
+
+class BondTimeseriesStatistics(BaseModel):
+    """統計情報"""
+    latest_date: str = Field(..., description="最新日付")
+    latest_amount: float = Field(..., description="最新残存額 (億円)")
+    min_amount: float = Field(..., description="最小残存額 (億円)")
+    max_amount: float = Field(..., description="最大残存額 (億円)")
+    avg_amount: float = Field(..., description="平均残存額 (億円)")
+    data_points: int = Field(..., description="データ数")
+
+
+class BondTimeseriesResponse(BaseModel):
+    """銘柄時系列レスポンス"""
+    bond_code: str = Field(..., description="銘柄コード")
+    bond_name: str = Field(..., description="銘柄名")
+    due_date: str = Field(..., description="償還日")
+    timeseries: List[BondTimeseriesPoint] = Field(..., description="時系列データ")
+    statistics: BondTimeseriesStatistics = Field(..., description="統計情報")
+
+
+class BondSearchItem(BaseModel):
+    """銘柄検索結果アイテム"""
+    bond_code: str = Field(..., description="銘柄コード")
+    bond_name: str = Field(..., description="銘柄名")
+    due_date: str = Field(..., description="償還日")
+    latest_market_amount: float = Field(..., description="最新市中残存額 (億円)")
+    latest_trade_date: str = Field(..., description="最新取引日")
+
+
+class BondSearchResponse(BaseModel):
+    """銘柄検索レスポンス"""
+    bonds: List[BondSearchItem] = Field(..., description="銘柄リスト")
+    count: int = Field(..., description="件数")

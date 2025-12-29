@@ -20,24 +20,50 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
-    # Supabase データベース設定
-    supabase_url: Optional[str] = None
-    supabase_key: Optional[str] = None  # Service Role Key（全操作用）
+    # Cloud SQL データベース設定
+    cloud_sql_host: str
+    cloud_sql_port: int = 5432
+    cloud_sql_database: str = "market_analytics"
+    cloud_sql_user: str
+    cloud_sql_password: str
+    cloud_sql_connection_name: Optional[str] = None  # Cloud Run用
 
     # 環境判定
     environment: str = "local"  # local, production
 
-    @validator('supabase_url')
-    def validate_supabase_url(cls, v):
+    @validator('cloud_sql_host')
+    def validate_host(cls, v):
         if not v:
-            raise ValueError("SUPABASE_URL is required")
+            raise ValueError("CLOUD_SQL_HOST is required")
         return v
 
-    @validator('supabase_key')
-    def validate_supabase_key(cls, v):
+    @validator('cloud_sql_user')
+    def validate_user(cls, v):
         if not v:
-            raise ValueError("SUPABASE_KEY is required")
+            raise ValueError("CLOUD_SQL_USER is required")
         return v
+
+    @validator('cloud_sql_password')
+    def validate_password(cls, v):
+        if not v:
+            raise ValueError("CLOUD_SQL_PASSWORD is required")
+        return v
+
+    @property
+    def database_url(self) -> str:
+        """データベース接続URL（asyncpg用）"""
+        return f"postgresql://{self.cloud_sql_user}:{self.cloud_sql_password}@{self.cloud_sql_host}:{self.cloud_sql_port}/{self.cloud_sql_database}"
+
+    @property
+    def database_dsn(self) -> dict:
+        """データベース接続パラメータ（psycopg2用）"""
+        return {
+            "host": self.cloud_sql_host,
+            "port": self.cloud_sql_port,
+            "database": self.cloud_sql_database,
+            "user": self.cloud_sql_user,
+            "password": self.cloud_sql_password
+        }
 
     @property
     def is_production(self) -> bool:

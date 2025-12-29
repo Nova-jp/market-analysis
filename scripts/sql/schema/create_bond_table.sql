@@ -67,12 +67,34 @@ CREATE INDEX idx_jsda_ave_compound_yield ON bond_data(ave_compound_yield);
 CREATE INDEX idx_jsda_ave_price ON bond_data(ave_price);
 CREATE INDEX idx_jsda_due_date ON bond_data(due_date);
 
--- RLS設定（開発環境用）
+-- RLS設定
 ALTER TABLE bond_data ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access" ON bond_data FOR SELECT USING (true);
-CREATE POLICY "Allow public insert" ON bond_data FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON bond_data FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON bond_data FOR DELETE USING (true);
+
+-- 読み取り: 誰でも可能
+CREATE POLICY "bond_data_select_public"
+ON bond_data
+FOR SELECT
+USING (true);
+
+-- 書き込み: 認証済みユーザーのみ (Service Role Key)
+CREATE POLICY "bond_data_insert_authenticated"
+ON bond_data
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "bond_data_update_authenticated"
+ON bond_data
+FOR UPDATE
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "bond_data_delete_authenticated"
+ON bond_data
+FOR DELETE
+TO authenticated
+USING (true);
 
 -- 分析用ビュー
 CREATE VIEW bond_summary AS

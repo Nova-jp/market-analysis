@@ -27,7 +27,31 @@ COMMENT ON COLUMN boj_holdings.issue_number IS '回号（Issue Number）';
 COMMENT ON COLUMN boj_holdings.face_value IS '額面金額（億円）';
 COMMENT ON COLUMN boj_holdings.created_at IS 'レコード登録日時';
 
--- RLSポリシー設定（本番環境用）
--- ALTER TABLE boj_holdings ENABLE ROW LEVEL SECURITY;
--- CREATE POLICY "Allow read access" ON boj_holdings FOR SELECT USING (true);
--- CREATE POLICY "Allow insert access" ON boj_holdings FOR INSERT WITH CHECK (true);
+-- RLSポリシー設定
+ALTER TABLE boj_holdings ENABLE ROW LEVEL SECURITY;
+
+-- 読み取り: 誰でも可能
+CREATE POLICY "boj_holdings_select_public"
+ON boj_holdings
+FOR SELECT
+USING (true);
+
+-- 書き込み: 認証済みユーザーのみ (Service Role Key)
+CREATE POLICY "boj_holdings_insert_authenticated"
+ON boj_holdings
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "boj_holdings_update_authenticated"
+ON boj_holdings
+FOR UPDATE
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "boj_holdings_delete_authenticated"
+ON boj_holdings
+FOR DELETE
+TO authenticated
+USING (true);
