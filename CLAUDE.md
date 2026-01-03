@@ -14,6 +14,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🚨 絶対遵守ルール（開発制約）
 
+### 開発スタンス & ベストプラクティス（重要）
+
+**ユーザーはWebアプリ開発の専門家ではないことを前提とし、常に「業界標準」や「ベストプラクティス」を提案・採用すること。**
+
+1.  **能動的な提案**: ユーザーの指示が標準的でない場合、そのまま実装せず「一般的には〜という手法が使われますが、いかがなさいましょう？」とより良い代替案を提示する。
+2.  **アーキテクチャの標準化**:
+    *   **DBアクセス**: Supabase REST API依存を廃止し、**SQLAlchemy (Async)** を使用した標準的なORM/Repositoryパターンを採用する。
+    *   **構成**: FastAPI + Pydantic + SQLAlchemy のモダンな構成（Modern Python Stack）に準拠する。
+3.  **コード品質**: 型ヒント（Type Hints）、Linter（Ruff/Black）、テスト（Pytest）を重視し、堅牢なコードを書く。
+
 ### JSDA サーバー保護ルール（必須）
 
 **警告**: 違反は即座にプロジェクト停止の対象

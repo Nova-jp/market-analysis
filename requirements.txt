@@ -16,6 +16,7 @@ requests==2.31.0
 httpx>=0.25.0
 
 # PostgreSQL データベースドライバ
+sqlalchemy==2.0.23      # ORM / Query Builder
 asyncpg==0.29.0          # 非同期用（Web API・FastAPI）
 psycopg2-binary==2.9.11  # 同期用（スクリプト・バッチ処理）
 
