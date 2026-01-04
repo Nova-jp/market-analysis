@@ -112,6 +112,27 @@ class DatabaseManager:
             self.logger.error(f"クエリ実行エラー: {e}")
             return []
 
+    def select_as_dict(self, sql_query: str, params: tuple = None) -> List[Dict[str, Any]]:
+        """
+        SQLクエリを実行し、結果を辞書のリストとして返す
+        
+        Args:
+            sql_query (str): 実行するSELECT文
+            params (tuple, optional): クエリパラメータ
+            
+        Returns:
+            List[Dict[str, Any]]: 結果のリスト（各行が辞書）
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(sql_query, params)
+                    rows = cur.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            self.logger.error(f"クエリ実行エラー (dict): {e}")
+            return []
+
     def get_yield_curve_data(self, trade_date: str = None) -> List[Dict[str, Any]]:
         """イールドカーブ作成用のデータを取得"""
         try:

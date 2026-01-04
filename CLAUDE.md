@@ -337,12 +337,22 @@ python scripts/export_bond_data_by_year.py
 3. 失敗時のrollback方法は？
 4. 本番環境に影響する？
 
+### 🐍 Python 3.13 開発制約
+- **依存関係**: SQLAlchemy AsyncIO を使用するため、`greenlet` ライブラリが必須。
+- **SSL**: Neon への非同期接続時は `connect_args={"ssl": "require"}` を明示的に指定。
+
+### 📈 分析ロジック (Yield / Swap / ASW)
+- **API分割**: `yield-data` (国債), `swap-data` (OIS), `asw-data` (ASW) は独立したエンドポイントとして提供。
+- **ASW算出**: `asw-data` エンドポイントで `scipy.interpolate.CubicSpline` (natural) を用いてスワップレートを動的に補間し、ASW = 国債利回り - 補間スワップレート を算出。
+- **閲覧制限**: スワップおよびASWカーブはフロントエンドで簡易パスワード保護。
+  - **Password**: `0720` (sessionStorage `swapUnlocked` で状態保持)
+
 ## 🏗️ アーキテクチャ
 
 ### 技術スタック
 
 - **言語**: Python 3.9+
-- **データベース**: Supabase (PostgreSQL)
+- **データベース**: Neon (PostgreSQL) - Serverless Postgres
 - **Webフレームワーク**: FastAPI + Jinja2
 - **可視化**: Chart.js, Bootstrap
 - **データ分析**: pandas, scikit-learn, numpy
@@ -402,7 +412,7 @@ app/services/scheduler_service.py
   ↓
 data/processors/bond_data_processor.py
   ↓
-data/utils/database_manager.py → Supabase DB
+data/utils/database_manager.py → Neon DB
 ```
 
 ## 🔧 開発コマンド
@@ -419,7 +429,7 @@ pip install -r requirements.txt
 
 # 環境変数を設定
 cp .env.example .env
-# .env ファイルを編集してSupabase認証情報を入力
+# .env ファイルを編集してNeon接続情報を入力
 ```
 
 ### 仮想環境ルール（必須）
@@ -483,38 +493,36 @@ curl https://market-analytics-646409283435.asia-northeast1.run.app/api/scheduler
 ## ⚙️ 環境変数設定
 
 **セキュリティ警告**:
-- `.env` ファイルは絶対にGitにコミットしない（`.gitignore`参照）
-- `SUPABASE_KEY` は**Service Role Key**を使用（全操作権限）
-- Service Role Keyは機密情報として厳重に管理
+- `.env` ファイルには機密データを含む（Git除外済み）
+- `.env.example` は設定テンプレート（Git管理対象）
+- 本番環境では環境変数またはセキュアな設定管理を使用
 
-必須の `.env` 設定:
+必須の `.env` 設定 (Neon/PostgreSQL):
 ```env
-# Supabase 設定
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_KEY=your_service_role_key  # ⚠️ Service Role Key（全権限）
+# Database 設定 (Neon)
+DB_HOST=ep-xxxx.aws.neon.tech
+DB_PORT=5432
+DB_NAME=neondb
+DB_USER=your_user
+DB_PASSWORD=your_password
 
 # アプリケーション設定
 DEBUG=True
 LOG_LEVEL=INFO
 ```
 
+*Note: SUPABASE_* および CLOUD_SQL_* 変数は互換性のために残されていますが、新規開発では標準の DB_* 変数を使用してください。*
+
 ### データベース接続設計
 
-**v3.1での設計変更（2025-10-16）**:
-- **単一キー設計**: Service Role Keyのみ使用
-- **全操作統一**: Webアプリ・データ収集・スケジューラーすべてで同一キー
-- **セキュリティ**: Cloud Run内部からのアクセスのみ許可 + RLS保護層
-
-**理由**:
-1. 本番環境はCloud Run内部 → 信頼された環境
-2. RLS設定済み → 追加の保護層が存在
-3. シンプル化 → 環境変数1つで管理が容易
-4. ローカル・本番統一 → 同じコードが両環境で動作
+**v3.6での設計変更（2026-01-04）**:
+- **Neonへの完全移行**: Supabase/Cloud SQLの使用終了
+- **接続方式**: PostgreSQL標準接続（psycopg2 / asyncpg）
+- **構成管理**: `app/core/config.py` で一元管理
 
 **使用箇所**:
-- Webアプリ: Service Role Key（`app/core/database.py`）
-- データ収集スクリプト: Service Role Key（`data/utils/database_manager.py`）
-- Cloud Run自動収集: Service Role Key（環境変数で設定）
+- Webアプリ: `app/core/database.py` (Async)
+- データ収集スクリプト: `data/utils/database_manager.py` (Sync)
 
 ## 📊 データソース
 

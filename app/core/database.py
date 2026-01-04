@@ -60,7 +60,7 @@ class DatabaseManager:
         limit = params.get("limit", 100)
         offset = params.get("offset", 0)
         
-        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings"]
+        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings", "irs_settlement_rates"]
         if table not in allowed_tables:
             return {"success": False, "error": f"Invalid table name: {table}"}
 
@@ -165,6 +165,59 @@ class DatabaseManager:
             logger.error(f"get_bond_data error: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
+
+    async def get_irs_data(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        IRSデータ（スワップ金利）を取得する専用メソッド
+        """
+        try:
+            limit = params.get("limit", 1000)
+            conditions = []
+            query_params = {"limit": limit}
+            
+            if "trade_date" in params:
+                val = params["trade_date"]
+                if val.startswith("eq."):
+                    conditions.append("trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val[3:])
+                elif val.startswith("gte."):
+                    conditions.append("trade_date >= :start_date")
+                    query_params["start_date"] = self._parse_date(val[4:])
+                elif val.startswith("lte."):
+                    conditions.append("trade_date <= :end_date")
+                    query_params["end_date"] = self._parse_date(val[4:])
+            
+            if "product_type" in params:
+                val = params["product_type"]
+                if val.startswith("eq."):
+                    conditions.append("product_type = :product_type")
+                    query_params["product_type"] = val[3:]
+
+            where_clause = ""
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
+
+            # Tenor sort might be tricky because it's string (1Y, 10Y). 
+            # ideally we sort by a converted value, but for now simple fetch is enough.
+            sql = f"""
+                SELECT * FROM irs_settlement_rates 
+                {where_clause}
+                LIMIT :limit
+            """
+            
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, query_params)
+                data = [dict(row._mapping) for row in result]
+                
+                # 型変換
+                data = self._convert_types(data)
+                
+                return {"success": True, "data": data}
+
+        except Exception as e:
+            logger.error(f"get_irs_data error: {e}")
             return {"success": False, "error": str(e)}
 
     async def health_check(self) -> Dict[str, Any]:

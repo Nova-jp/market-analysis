@@ -18,10 +18,34 @@ class BondYieldData(BaseModel):
         populate_by_name = True
 
 
+class SwapYieldData(BaseModel):
+    """スワップ金利データモデル"""
+    maturity: float = Field(..., description="残存年数")
+    rate: float = Field(..., description="金利(%)")
+    tenor: str = Field(..., description="期間 (1Y, 10Y等)")
+
+
+class ASWData(BaseModel):
+    """ASW (Asset Swap Spread) データモデル"""
+    maturity: float = Field(..., description="残存年数")
+    bond_code: Optional[str] = Field(None, description="銘柄コード")
+    bond_name: str = Field(..., description="銘柄名")
+    bond_yield: float = Field(..., description="国債利回り(%)")
+    swap_rate: float = Field(..., description="補間スワップレート(%)")
+    asw: float = Field(..., description="ASW (国債-スワップ)")  # %単位
+    
 class YieldCurveResponse(BaseModel):
     """イールドカーブレスポンスモデル"""
     date: str = Field(..., description="対象日付 (YYYY-MM-DD)")
-    data: List[BondYieldData] = Field(..., description="イールドカーブデータ")
+    data: List[BondYieldData] = Field(..., description="国債イールドカーブデータ")
+    swap_data: List[SwapYieldData] = Field(default=[], description="スワップイールドカーブデータ")
+    error: Optional[str] = Field(None, description="エラーメッセージ")
+
+
+class ASWCurveResponse(BaseModel):
+    """ASWカーブレスポンスモデル"""
+    date: str = Field(..., description="対象日付 (YYYY-MM-DD)")
+    data: List[ASWData] = Field(..., description="ASWデータ")
     error: Optional[str] = Field(None, description="エラーメッセージ")
 
 

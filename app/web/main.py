@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     # === 起動時処理 ===
     print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
     print(f"📊 Environment: {settings.environment}")
-    print(f"🔗 Database configured: {bool(settings.supabase_url)}")
+    print(f"🔗 Database Host: {settings.db_host}")
 
     if settings.is_local:
         print(f"🌐 Local server: http://{settings.host}:{settings.port}")

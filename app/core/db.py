@@ -17,6 +17,7 @@ engine = create_async_engine(
     future=True,
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
+    connect_args={"ssl": "require"},
 )
 
 # 非同期セッションファクトリ

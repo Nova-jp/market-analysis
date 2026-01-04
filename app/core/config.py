@@ -4,6 +4,7 @@
 """
 import os
 from typing import Optional
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -21,27 +22,23 @@ class Settings(BaseSettings):
 
     # データベース設定 (PostgreSQL)
     # .env の DB_HOST, DB_USER 等を自動的に読み込む
-    db_host: str
-    db_port: int = 5432
-    db_name: str = "neondb"
-    db_user: str
-    db_password: str
+    db_host: str = Field(validation_alias='DB_HOST')
+    db_port: int = Field(5432, validation_alias='DB_PORT')
+    db_name: str = Field("neondb", validation_alias='DB_NAME')
+    db_user: str = Field(validation_alias='DB_USER')
+    db_password: str = Field(validation_alias='DB_PASSWORD')
     
     # 接続プール設定
     db_pool_size: int = 5
     db_max_overflow: int = 10
     
-    # Supabase設定（互換性のため維持するが、DB接続には使用しない推奨）
-    supabase_url: Optional[str] = None
-    supabase_key: Optional[str] = None
-
     # 環境判定
     environment: str = "local"  # local, production
 
     @property
     def database_url(self) -> str:
         """SQLAlchemy用同期接続URL (psycopg2)"""
-        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}?sslmode=require"
 
     @property
     def async_database_url(self) -> str:

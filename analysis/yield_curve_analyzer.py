@@ -40,30 +40,22 @@ class YieldCurveAnalyzer:
         Returns:
             pd.DataFrame: 債券データ
         """
-        import requests
-        
         try:
-            response = requests.get(
-                f'{self.db_manager.supabase_url}/rest/v1/bond_data',
-                params={
-                    'select': '*',
-                    'trade_date': f'eq.{target_date}',
-                    'order': 'due_date.asc'
-                },
-                headers=self.db_manager.headers
-            )
+            # select_as_dictを使用して辞書のリストを取得
+            query = """
+                SELECT * FROM bond_data 
+                WHERE trade_date = %s 
+                ORDER BY due_date ASC
+            """
             
-            if response.status_code == 200:
-                data = response.json()
-                if data:
-                    df = pd.DataFrame(data)
-                    print(f"✅ データ取得成功: {len(df)}件 ({target_date})")
-                    return df
-                else:
-                    print(f"📭 データなし: {target_date}")
-                    return pd.DataFrame()
+            rows = self.db_manager.select_as_dict(query, (target_date,))
+            
+            if rows:
+                df = pd.DataFrame(rows)
+                print(f"✅ データ取得成功: {len(df)}件 ({target_date})")
+                return df
             else:
-                print(f"❌ データ取得エラー: {response.status_code}")
+                print(f"📭 データなし: {target_date}")
                 return pd.DataFrame()
                 
         except Exception as e:

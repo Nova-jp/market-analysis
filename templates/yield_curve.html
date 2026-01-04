@@ -177,10 +177,54 @@
 
             <!-- 右サイド: グラフ表示 -->
             <div class="col-md-9">
-                <div class="card">
+                <!-- 国債イールドカーブ -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>国債イールドカーブ (JGB)</h6>
+                    </div>
                     <div class="card-body">
                         <div class="chart-container">
                             <canvas id="yieldChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- スワップカーブ -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>スワップカーブ (OIS)</h6>
+                    </div>
+                    <div class="card-body position-relative">
+                        <!-- ロック画面 -->
+                        <div id="swapLockContainer" class="text-center p-5" style="background: rgba(255,255,255,0.9); z-index: 10;">
+                            <div class="mb-3">
+                                <i class="fas fa-lock fa-3x text-secondary"></i>
+                            </div>
+                            <h5 class="text-secondary mb-3">パスワードを入力して表示</h5>
+                            <div class="input-group justify-content-center" style="max-width: 300px; margin: 0 auto;">
+                                <input type="password" id="swapPasswordInput" class="form-control" placeholder="Password">
+                                <button class="btn btn-primary" onclick="unlockSwap()">
+                                    <i class="fas fa-unlock"></i> 解除
+                                </button>
+                            </div>
+                            <small id="passwordError" class="text-danger mt-2 d-none">パスワードが間違っています</small>
+                        </div>
+
+                        <!-- チャートコンテナ (初期非表示) -->
+                        <div id="swapChartContainer" class="chart-container" style="display: none;">
+                            <canvas id="swapChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ASWカーブ (ロック解除後表示) -->
+                <div id="aswCard" class="card" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>ASWカーブ (Asset Swap Spread)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="aswChart"></canvas>
                         </div>
                     </div>
                 </div>
@@ -194,7 +238,10 @@
         // グローバル変数
         let selectedDates = [];
         let yieldChart = null;
+        let swapChart = null;
+        let aswChart = null;
         let maturityFilter = { min: null, max: null };
+        let isSwapUnlocked = false; // スワップ表示ロック状態
         const MAX_DATES = 20;
         const colors = [
             '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
@@ -205,78 +252,135 @@
 
         // 初期化
         document.addEventListener('DOMContentLoaded', function() {
-            initChart();
+            checkSwapUnlockStatus(); // ロック状態確認
+            initCharts();
             setupEventListeners();
             loadQuickDates();
         });
 
+        // ロック状態確認
+        function checkSwapUnlockStatus() {
+            const unlocked = sessionStorage.getItem('swapUnlocked');
+            if (unlocked === 'true') {
+                isSwapUnlocked = true;
+                showSwapChart();
+            }
+        }
+
+        // ロック解除処理
+        function unlockSwap() {
+            const input = document.getElementById('swapPasswordInput');
+            const errorMsg = document.getElementById('passwordError');
+            
+            if (input.value === '0720') {
+                sessionStorage.setItem('swapUnlocked', 'true');
+                isSwapUnlocked = true;
+                errorMsg.classList.add('d-none');
+                showSwapChart();
+                // 既存の日付についてデータを再取得して描画
+                if (selectedDates.length > 0) {
+                     reloadAllData();
+                }
+            } else {
+                errorMsg.classList.remove('d-none');
+                input.value = '';
+                input.focus();
+            }
+        }
+
+        // 全データ再読み込み（ロック解除時用）
+        async function reloadAllData() {
+            const currentDates = [...selectedDates];
+            selectedDates = [];
+            updateDisplay();
+            for (const date of currentDates) {
+                await addDate(date);
+            }
+        }
+
+        // スワップ/ASWチャート表示切替
+        function showSwapChart() {
+            document.getElementById('swapLockContainer').style.display = 'none';
+            document.getElementById('swapChartContainer').style.display = 'block';
+            document.getElementById('aswCard').style.display = 'block';
+        }
+
         // グラフ初期化
-        function initChart() {
-            const ctx = document.getElementById('yieldChart').getContext('2d');
-            yieldChart = new Chart(ctx, {
+        function initCharts() {
+            // 国債チャート
+            const ctx1 = document.getElementById('yieldChart').getContext('2d');
+            yieldChart = new Chart(ctx1, {
                 type: 'line',
                 data: { datasets: [] },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            position: 'bottom',
-                            title: {
-                                display: true,
-                                text: 'Maturity (Years)',
-                                font: { size: 14, weight: 'bold' }
-                            }
-                        },
-                        y: {
-                            title: {
-                                display: true,
-                                text: 'Yield Rate (%)',
-                                font: { size: 14, weight: 'bold' }
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        },
+                options: getChartOptions('JGB Yield Curve', 'Yield (%)')
+            });
+
+            // スワップチャート
+            const ctx2 = document.getElementById('swapChart').getContext('2d');
+            swapChart = new Chart(ctx2, {
+                type: 'line',
+                data: { datasets: [] },
+                options: getChartOptions('OIS Swap Curve', 'Rate (%)')
+            });
+
+            // ASWチャート
+            const ctx3 = document.getElementById('aswChart').getContext('2d');
+            aswChart = new Chart(ctx3, {
+                type: 'line',
+                data: { datasets: [] },
+                options: getChartOptions('ASW Curve (Bond Yield - Swap Rate)', 'Spread (%)')
+            });
+        }
+
+        function getChartOptions(title, yLabel) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
                         title: {
                             display: true,
-                            text: 'Yield Curve Comparison'
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            filter: function(item) {
-                                // 最初の項目のbond_codeと一致するもののみ表示
-                                if (!this.dataPoints || this.dataPoints.length === 0) return true;
-                                const targetCode = this.dataPoints[0].raw.bond_code;
-                                return item.raw.bond_code === targetCode;
-                            },
-                            callbacks: {
-                                title: function(context) {
-                                    const item = context[0];
-                                    const bondName = item.raw.bond_name || 'N/A';
-                                    const bondCode = item.raw.bond_code || 'N/A';
-                                    return `${bondName} (${bondCode})`;
-                                },
-                                label: function(context) {
-                                    const date = context.dataset.label;
-                                    const yld = context.parsed.y.toFixed(3);
-                                    const mat = context.parsed.x.toFixed(2);
-                                    return `${date}: 残存${mat}年, 利回り${yld}%`;
-                                }
-                            }
+                            text: 'Maturity (Years)',
+                            font: { size: 14, weight: 'bold' }
                         }
                     },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
+                    y: {
+                        title: {
+                            display: true,
+                            text: yLabel || 'Rate (%)',
+                            font: { size: 14, weight: 'bold' }
+                        }
                     }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    title: {
+                        display: false,
+                        text: title
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                const date = context.dataset.label;
+                                const val = context.parsed.y.toFixed(4);
+                                const mat = context.parsed.x.toFixed(2);
+                                return `${date}: 残存${mat}年, ${val}%`;
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
                 }
-            });
+            };
         }
 
         // イベントリスナー設定
@@ -284,6 +388,14 @@
             const dateInput = document.getElementById('dateInput');
             const addDateBtn = document.getElementById('addDateBtn');
             const clearAllBtn = document.getElementById('clearAllBtn');
+            const swapPassInput = document.getElementById('swapPasswordInput');
+
+            // パスワード入力のEnterキー
+            swapPassInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    unlockSwap();
+                }
+            });
 
             // 日付入力フィールドのキー入力制御
             dateInput.addEventListener('keydown', function(e) {
@@ -317,7 +429,7 @@
             clearAllBtn.addEventListener('click', function() {
                 selectedDates = [];
                 updateDisplay();
-                updateChart();
+                updateCharts();
             });
 
             // 年限フィルター
@@ -340,7 +452,7 @@
                 }
 
                 showMessage('年限フィルターを適用しました', 'success');
-                updateChart();
+                updateCharts();
             });
 
             clearFilterBtn.addEventListener('click', function() {
@@ -349,7 +461,7 @@
                 minMaturityInput.value = '';
                 maxMaturityInput.value = '';
                 showMessage('年限フィルターをクリアしました', 'info');
-                updateChart();
+                updateCharts();
             });
         }
 
@@ -371,7 +483,7 @@
             // ユーザー入力フラグをtrueにして追加
             addDate(date, true);
 
-            // 成功した場合のみ入力欄をクリア（失敗時は loadYieldData で日付が戻される）
+            // 成功した場合のみ入力欄をクリア
             if (selectedDates.includes(date)) {
                 dateInput.value = '';
             }
@@ -400,14 +512,16 @@
 
             selectedDates.push(date);
             updateDisplay();
-            loadYieldData(date, fromUserInput);
+            
+            // データ存在確認とチャート更新
+            checkAndLoadDate(date, fromUserInput);
         }
 
         // 日付削除
         function removeDate(date) {
             selectedDates = selectedDates.filter(d => d !== date);
             updateDisplay();
-            updateChart();
+            updateCharts();
         }
 
         // 表示更新
@@ -467,37 +581,52 @@
             }
         }
 
-        // イールドデータ取得
-        async function loadYieldData(date, fromUserInput = false) {
+        // データ確認とロード
+        async function checkAndLoadDate(date, fromUserInput = false) {
             try {
-                const response = await fetch(`/api/yield-data/${date}`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                // 並行してリクエスト (スワップ/ASWはロック解除時のみ)
+                const promises = [fetch(`/api/yield-data/${date}`)];
+                if (isSwapUnlocked) {
+                    promises.push(fetch(`/api/swap-data/${date}`));
+                    promises.push(fetch(`/api/asw-data/${date}`));
                 }
 
-                const data = await response.json();
+                const results = await Promise.all(promises);
+                const bondData = await results[0].json();
+                
+                let swapData = { data: [] };
+                let aswData = { data: [] };
+                if (isSwapUnlocked && results.length >= 2) {
+                    swapData = await results[1].json();
+                    if (results.length >= 3) {
+                        aswData = await results[2].json();
+                    }
+                }
 
-                if (data.error || !data.data || data.data.length === 0) {
+                const hasBond = bondData.data && bondData.data.length > 0;
+                const hasSwap = swapData.data && swapData.data.length > 0;
+                const hasASW = aswData.data && aswData.data.length > 0;
+
+                if (!hasBond && (!isSwapUnlocked || !hasSwap)) {
                     showMessage(`${date} のデータが見つかりません`, 'warning');
                     removeDate(date);
-
-                    // ユーザー入力の場合は入力欄に日付を戻す
                     if (fromUserInput) {
                         document.getElementById('dateInput').value = date;
                     }
                     return;
                 }
 
-                showMessage(`${date} のデータを取得しました (${data.data.length}件)`, 'success');
-                updateChart();
+                const msg = [`国債${bondData.data.length}件`];
+                if (hasSwap) msg.push(`スワップ${swapData.data.length}件`);
+                if (hasASW) msg.push(`ASW${aswData.data.length}件`);
+                showMessage(`${date} のデータを取得しました (${msg.join(', ')})`, 'success');
+
+                updateCharts();
 
             } catch (error) {
-                console.error(`${date} データ取得エラー:`, error);
-                showMessage(`${date} のデータ取得に失敗しました`, 'danger');
+                console.error(`${date} データ確認エラー:`, error);
+                showMessage(`${date} のデータ確認に失敗しました`, 'danger');
                 removeDate(date);
-
-                // ユーザー入力の場合は入力欄に日付を戻す
                 if (fromUserInput) {
                     document.getElementById('dateInput').value = date;
                 }
@@ -505,60 +634,115 @@
         }
 
         // グラフ更新
-        async function updateChart() {
+        async function updateCharts() {
             yieldChart.data.datasets = [];
+            swapChart.data.datasets = [];
+            aswChart.data.datasets = [];
 
             for (let i = 0; i < selectedDates.length; i++) {
                 const date = selectedDates[i];
+                const color = colors[i % colors.length];
 
+                // 国債データ取得と描画
                 try {
                     const response = await fetch(`/api/yield-data/${date}`);
                     const data = await response.json();
 
                     if (!data.error && data.data && data.data.length > 0) {
-                        // 年限フィルターを適用
-                        let filteredData = data.data;
-
-                        if (maturityFilter.min !== null || maturityFilter.max !== null) {
-                            filteredData = data.data.filter(point => {
-                                const maturity = point.maturity;
-
-                                if (maturityFilter.min !== null && maturity < maturityFilter.min) {
-                                    return false;
-                                }
-                                if (maturityFilter.max !== null && maturity > maturityFilter.max) {
-                                    return false;
-                                }
-                                return true;
-                            });
-                        }
-
+                        let filteredData = filterData(data.data);
+                        
                         if (filteredData.length > 0) {
-                            // 年限順にソート（グラフの描画崩れ防止）
                             filteredData.sort((a, b) => a.maturity - b.maturity);
-
                             yieldChart.data.datasets.push({
                                 label: date,
                                 data: filteredData.map(point => ({
                                     x: point.maturity,
-                                    y: point.yield !== undefined ? point.yield : point.yield_rate,
-                                    bond_code: point.bond_code,
-                                    bond_name: point.bond_name
+                                    y: point.yield !== undefined ? point.yield : point.yield_rate
                                 })),
-                                borderColor: colors[i % colors.length],  // 20色をループ
-                                backgroundColor: colors[i % colors.length] + '20',
+                                borderColor: color,
+                                backgroundColor: color + '20',
                                 fill: false,
                                 tension: 0.1,
                                 pointRadius: 2
                             });
                         }
                     }
-                } catch (error) {
-                    console.error(`${date} グラフデータ処理エラー:`, error);
+                } catch (e) { console.error(e); }
+
+                // スワップ & ASW データ取得と描画 (ロック解除時のみ)
+                if (isSwapUnlocked) {
+                    // スワップ
+                    try {
+                        const response = await fetch(`/api/swap-data/${date}`);
+                        const data = await response.json();
+
+                        if (!data.error && data.data && data.data.length > 0) {
+                            let filteredData = filterData(data.data);
+                            if (filteredData.length > 0) {
+                                filteredData.sort((a, b) => a.maturity - b.maturity);
+                                swapChart.data.datasets.push({
+                                    label: date,
+                                    data: filteredData.map(point => ({
+                                        x: point.maturity,
+                                        y: point.rate
+                                     })),
+                                    borderColor: color,
+                                    backgroundColor: color + '20',
+                                    fill: false,
+                                    tension: 0.1,
+                                    pointRadius: 2,
+                                    borderDash: [5, 5]
+                                });
+                            }
+                        }
+                    } catch (e) { console.error(e); }
+
+                    // ASW
+                    try {
+                        const response = await fetch(`/api/asw-data/${date}`);
+                        const data = await response.json();
+
+                        if (!data.error && data.data && data.data.length > 0) {
+                            let filteredData = filterData(data.data);
+                            if (filteredData.length > 0) {
+                                filteredData.sort((a, b) => a.maturity - b.maturity);
+                                aswChart.data.datasets.push({
+                                    label: date,
+                                    data: filteredData.map(point => ({
+                                        x: point.maturity,
+                                        y: point.asw
+                                     })),
+                                    borderColor: color,
+                                    backgroundColor: color + '20',
+                                    fill: false,
+                                    tension: 0.1,
+                                    pointRadius: 3,
+                                    showLine: false // 散布図的に表示
+                                });
+                            }
+                        }
+                    } catch (e) { console.error(e); }
                 }
             }
 
             yieldChart.update();
+            if (isSwapUnlocked) {
+                swapChart.update();
+                aswChart.update();
+            }
+        }
+
+        // データフィルタリング
+        function filterData(data) {
+            if (maturityFilter.min === null && maturityFilter.max === null) {
+                return data;
+            }
+            return data.filter(point => {
+                const maturity = point.maturity;
+                if (maturityFilter.min !== null && maturity < maturityFilter.min) return false;
+                if (maturityFilter.max !== null && maturity > maturityFilter.max) return false;
+                return true;
+            });
         }
 
         // メッセージ表示（レイアウトシフト防止）
