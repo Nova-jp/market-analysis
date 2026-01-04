@@ -3,8 +3,7 @@
 ローカル開発と本番環境の設定を統一管理
 """
 import os
-from typing import Optional, Dict, Any
-from pydantic import validator, PostgresDsn
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 
@@ -20,15 +19,15 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
-    # データベース設定 (Neon / PostgreSQL)
-    # デフォルト値はローカル開発用または.envから読み込み
+    # データベース設定 (PostgreSQL)
+    # .env の DB_HOST, DB_USER 等を自動的に読み込む
     db_host: str
     db_port: int = 5432
     db_name: str = "neondb"
     db_user: str
     db_password: str
     
-    # 接続プール設定など
+    # 接続プール設定
     db_pool_size: int = 5
     db_max_overflow: int = 10
     
@@ -38,31 +37,6 @@ class Settings(BaseSettings):
 
     # 環境判定
     environment: str = "local"  # local, production
-
-    @validator('db_host', pre=True)
-    def validate_host(cls, v, values):
-        # 移行過渡期対応: CLOUD_SQL_HOST や NEON_HOST も許容
-        if not v:
-            return os.getenv('NEON_HOST') or os.getenv('CLOUD_SQL_HOST')
-        return v
-
-    @validator('db_user', pre=True)
-    def validate_user(cls, v, values):
-        if not v:
-            return os.getenv('NEON_USER') or os.getenv('CLOUD_SQL_USER')
-        return v
-
-    @validator('db_password', pre=True)
-    def validate_password(cls, v, values):
-        if not v:
-            return os.getenv('NEON_PASSWORD') or os.getenv('CLOUD_SQL_PASSWORD')
-        return v
-
-    @validator('db_name', pre=True)
-    def validate_db_name(cls, v, values):
-        if not v:
-            return os.getenv('NEON_DATABASE') or os.getenv('CLOUD_SQL_DATABASE', 'market_analytics')
-        return v
 
     @property
     def database_url(self) -> str:

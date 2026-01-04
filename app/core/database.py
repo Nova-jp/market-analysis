@@ -1,117 +1,189 @@
 """
-統一データベース接続管理システム（Web API用）
-Supabaseとの接続を一元管理し、FastAPI APIで共通利用
+統一データベース接続管理システム（Web API用 - Neon対応版）
+SQLAlchemy + asyncpg を使用して Neon (PostgreSQL) に直接接続
 
 注意: このモジュールはWeb API用（async対応）
 スクリプト/バッチ処理では data/utils/database_manager.py を使用すること
 """
-import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
-from .config import settings
+from datetime import datetime, date
+from decimal import Decimal
+from sqlalchemy import text
+from app.core.db import AsyncSessionLocal
+import json
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
     """
-    Web API用データベース管理クラス（非同期対応）
-
-    FastAPIのasyncエンドポイントで使用するため、httpx.AsyncClientを使用。
-    スクリプトやバッチ処理では data/utils/database_manager.py を使用すること。
+    Web API用データベース管理クラス（SQLAlchemy非同期版）
+    Supabase REST APIからNeon直接接続へ移行
     """
 
     def __init__(self):
         """
-        Service Role Keyを使用して全操作を実行
-        本番環境ではCloud Run内部からのアクセスのみ許可
-        RLSポリシーで追加の保護層を提供
+        初期化
         """
-        self.supabase_url = settings.supabase_url
-        self.supabase_key = settings.supabase_key
-        self.base_url = f"{self.supabase_url}/rest/v1"
-        self.headers = {
-            'apikey': self.supabase_key,
-            'Authorization': f'Bearer {self.supabase_key}',
-            'Content-Type': 'application/json'
-        }
-        # タイムアウト設定（接続: 10秒, 読み取り: 30秒）
-        self._timeout = httpx.Timeout(10.0, read=30.0)
+        pass
+    
+    def _parse_date(self, date_str: str) -> date:
+        """文字列を日付オブジェクトに変換"""
+        try:
+            return datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return date_str
+    
+    def _convert_types(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        データベースからの取得データをJSONシリアライズ可能な型に変換
+        - datetime.date -> str
+        - Decimal -> float
+        """
+        for row in data:
+            for key, value in row.items():
+                if isinstance(value, date):
+                    row[key] = str(value)
+                elif isinstance(value, Decimal):
+                    row[key] = float(value)
+        return data
 
     async def execute_query(self, table: str = "bond_data",
                           params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        データベースクエリの共通実行関数（非同期版）
-
-        Args:
-            table: テーブル名（デフォルト: bond_data）
-            params: クエリパラメータ
-
-        Returns:
-            Dict containing success status and data/error
+        データベースクエリ実行（互換性維持のためのラッパー）
         """
         if params is None:
             params = {}
+            
+        limit = params.get("limit", 100)
+        offset = params.get("offset", 0)
+        
+        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings"]
+        if table not in allowed_tables:
+            return {"success": False, "error": f"Invalid table name: {table}"}
 
         try:
-            url = f"{self.base_url}/{table}"
+            async with AsyncSessionLocal() as session:
+                order_clause = ""
+                order_param = params.get("order")
+                if order_param:
+                    if "trade_date.desc" in order_param:
+                        order_clause = "ORDER BY trade_date DESC"
+                    elif "trade_date.asc" in order_param:
+                        order_clause = "ORDER BY trade_date ASC"
+                
+                if not order_clause and table == "bond_data":
+                    order_clause = "ORDER BY trade_date DESC"
 
-            logger.info(f"Database query to {table} with params: {params}")
-
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(url, params=params, headers=self.headers)
-
-            if response.status_code == 200:
-                data = response.json()
-                logger.info(f"Query successful, returned {len(data)} records")
+                query_str = f"SELECT * FROM {table} {order_clause} LIMIT :limit OFFSET :offset"
+                
+                stmt = text(query_str)
+                result = await session.execute(stmt, {"limit": limit, "offset": offset})
+                
+                data = [dict(row._mapping) for row in result]
+                
+                # 型変換
+                data = self._convert_types(data)
+                
+                logger.info(f"Query successful: {len(data)} records from {table}")
                 return {"success": True, "data": data}
-            else:
-                error_msg = f"Database error: {response.status_code} - {response.text}"
-                logger.error(error_msg)
-                return {"success": False, "error": error_msg}
 
-        except httpx.TimeoutException as e:
-            error_msg = f"Database request timeout: {str(e)}"
-            logger.error(error_msg)
-            return {"success": False, "error": error_msg}
-        except httpx.RequestError as e:
-            error_msg = f"Database connection error: {str(e)}"
+        except Exception as e:
+            error_msg = f"Database error: {str(e)}"
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
 
     async def get_bond_data(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """国債データを取得する専用メソッド"""
-        return await self.execute_query("bond_data", params)
+        """
+        国債データを取得する専用メソッド
+        APIエンドポイントからのリクエストパラメータを処理
+        """
+        try:
+            limit = params.get("limit", 1000)
+            conditions = []
+            query_params = {"limit": limit}
+            
+            if "trade_date" in params:
+                val = params["trade_date"]
+                if val.startswith("eq."):
+                    conditions.append("trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val[3:])
+                elif val.startswith("gte."):
+                    conditions.append("trade_date >= :start_date")
+                    query_params["start_date"] = self._parse_date(val[4:])
+                elif val.startswith("lte."):
+                    conditions.append("trade_date <= :end_date")
+                    query_params["end_date"] = self._parse_date(val[4:])
+                else:
+                    conditions.append("trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val)
+                
+            if "start_date" in params:
+                conditions.append("trade_date >= :start_date")
+                query_params["start_date"] = self._parse_date(params["start_date"])
+                
+            if "end_date" in params:
+                conditions.append("trade_date <= :end_date")
+                query_params["end_date"] = self._parse_date(params["end_date"])
+
+            where_clause = ""
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
+
+            order_clause = "ORDER BY trade_date DESC, bond_code ASC"
+            if "order" in params:
+                order_param = params["order"]
+                if "trade_date.desc" in order_param:
+                    order_clause = "ORDER BY trade_date DESC"
+                elif "trade_date.asc" in order_param:
+                    order_clause = "ORDER BY trade_date ASC"
+
+            sql = f"""
+                SELECT * FROM bond_data 
+                {where_clause}
+                {order_clause}
+                LIMIT :limit
+            """
+            
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, query_params)
+                data = [dict(row._mapping) for row in result]
+                
+                if data:
+                    logger.info(f"Sample data keys: {list(data[0].keys())}")
+                    # 型変換
+                    data = self._convert_types(data)
+                else:
+                    logger.warning("No data found matching criteria")
+                
+                return {"success": True, "data": data}
+
+        except Exception as e:
+            logger.error(f"get_bond_data error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
 
     async def health_check(self) -> Dict[str, Any]:
         """データベース接続のヘルスチェック"""
         try:
-            result = await self.execute_query("bond_data", {"limit": 1})
-            if result["success"]:
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
                 return {
                     "database_status": "healthy",
-                    "url_configured": bool(self.supabase_url),
-                    "key_configured": bool(self.supabase_key)
+                    "connection": "neon-direct"
                 }
-            else:
-                return {
-                    "database_status": "error",
-                    "error": result["error"],
-                    "url_configured": bool(self.supabase_url),
-                    "key_configured": bool(self.supabase_key)
-                }
-        except httpx.RequestError as e:
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
             return {
                 "database_status": "error",
-                "error": str(e),
-                "url_configured": bool(self.supabase_url),
-                "key_configured": bool(self.supabase_key)
+                "error": str(e)
             }
 
 
 # グローバルデータベースマネージャーインスタンス
-# Service Role Key使用（読み取り・書き込み共通）
 db_manager = DatabaseManager()
-
-# 後方互換性のためのエイリアス
 db_manager_admin = db_manager
