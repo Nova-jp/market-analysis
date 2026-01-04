@@ -124,6 +124,42 @@ class BondDataProcessor:
 
         return url, filename, actual_trade_date
     
+    def download_data_for_date(self, date_obj) -> Optional[pd.DataFrame]:
+        """指定日のデータをダウンロード（フォルダ年またぎ対応）"""
+        url, filename, actual_trade_date = self.build_csv_url(date_obj)
+        
+        # 1. 標準URLで試行
+        df = self.download_csv_data(url)
+        if df is not None:
+            return df
+            
+        # 2. 失敗時、1月なら前年フォルダを試行
+        # JSDAのフォルダ構造は「公表日」基準だが、年またぎの時期は「取引日（前年）」のフォルダに含まれることがある
+        if isinstance(date_obj, datetime):
+            target_date = date_obj.date()
+        else:
+            target_date = date_obj
+            
+        if target_date.month == 1:
+            self.logger.info(f"標準URLで取得失敗。1月のため前年フォルダ({target_date.year - 1})を試行します。")
+            
+            # URL再構築
+            year = target_date.year - 1
+            month = target_date.month
+            
+            # 2019年以前の対応（月別）- 今回のケース(2025/2026)では関係ないが念のため
+            if year <= 2019:
+                url_alt = f"{self.base_url}/{year}/{month:02d}/{filename}"
+            else:
+                url_alt = f"{self.base_url}/{year}/{filename}"
+            
+            df = self.download_csv_data(url_alt)
+            if df is not None:
+                self.logger.info(f"前年フォルダから取得成功: {url_alt}")
+                return df
+                
+        return None
+
     def download_csv_data(self, url: str) -> Optional[pd.DataFrame]:
         """CSVデータをダウンロード"""
         try:
@@ -334,8 +370,8 @@ class BondDataProcessor:
                     lambda x: x.isoformat() if hasattr(x, 'isoformat') else x
                 )
         
-        # 2. NaN値をNoneに変換
-        result_df = result_df.where(pd.notnull(result_df), None)
+        # 2. NaN値をNoneに変換 (object変換することで完全にNoneに置換)
+        result_df = result_df.astype(object).where(pd.notnull(result_df), None)
         
         self.logger.info(f"処理済みデータ: {len(result_df)}件")
         
@@ -416,8 +452,8 @@ class BondDataProcessor:
             if test_date.weekday() >= 5:
                 continue
             
-            url, filename = self.build_csv_url(test_date)
-            raw_df = self.download_csv_data(url)
+            # download_data_for_dateを使用して取得（年またぎ対応）
+            raw_df = self.download_data_for_date(test_date)
             
             if raw_df is not None:
                 processed_df = self.process_raw_data(raw_df)

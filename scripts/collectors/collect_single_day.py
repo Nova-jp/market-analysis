@@ -6,20 +6,60 @@
 
 import sys
 import os
+import argparse
 from datetime import date
 
 # プロジェクトルートをパスに追加
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
 
-def collect_single_day_data(target_date_str):
+def calculate_market_amount_for_record(bond_code: str, trade_date: str):
+    """
+    1レコード分のmarket_amountを計算
+
+    Args:
+        bond_code: 銘柄コード
+        trade_date: 取引日 (YYYY-MM-DD)
+
+    Returns:
+        market_amount (億円), 計算不可時はNone
+    """
+    try:
+        from data.utils.market_amount_calculator import MarketAmountCalculator
+
+        calculator = MarketAmountCalculator()
+        auction_history = calculator.get_auction_history(bond_code)
+        boj_history = calculator.get_boj_holdings_history(bond_code)
+
+        # 累積発行額
+        cumulative = calculator.calculate_cumulative_issuance(
+            auction_history, trade_date
+        )
+        if cumulative is None:
+            return None  # 発行前
+
+        # 日銀保有額
+        boj_holding = calculator.get_latest_boj_holding(boj_history, trade_date)
+
+        # 市中残存額
+        if boj_holding is not None:
+            return cumulative - boj_holding
+        else:
+            return cumulative
+
+    except Exception as e:
+        print(f"⚠️ market_amount計算エラー ({bond_code}, {trade_date}): {e}")
+        return None
+
+def collect_single_day_data(target_date_str, debug=False):
     """
     指定日付のデータを収集してデータベースに保存
     
     Args:
         target_date_str (str): 対象日付 (YYYY-MM-DD形式)
+        debug (bool): デバッグモード（保存失敗時に1件ずつ詳細表示）
         
     Returns:
         bool: 成功時True、失敗時False
@@ -35,6 +75,7 @@ def collect_single_day_data(target_date_str):
     print("=" * 40)
     print(f"📅 収集対象日付: {target_date}")
     print(f"🔗 データソース: JSDA")
+    print(f"🛠️  デバッグモード: {'ON' if debug else 'OFF'}")
     print("-" * 40)
     
     # 初期化
@@ -44,10 +85,12 @@ def collect_single_day_data(target_date_str):
     try:
         # 1. CSVデータ取得
         print("📡 JSDAからCSVデータを取得中...")
-        url, filename = processor.build_csv_url(target_date)
-        print(f"   URL: {url}")
+        # build_csv_urlは表示用URLのため、download_data_for_date内で適切に処理される
+        url, filename, _ = processor.build_csv_url(target_date)
+        print(f"   Target: {filename}")
         
-        raw_df = processor.download_csv_data(url)
+        # download_data_for_dateを使用して取得（年またぎ対応）
+        raw_df = processor.download_data_for_date(target_date)
         
         if raw_df is None:
             print("❌ CSVデータの取得に失敗しました")
@@ -69,14 +112,60 @@ def collect_single_day_data(target_date_str):
         
         print(f"✅ データ処理成功: {len(processed_df):,}行")
         
-        # 3. trade_date追加
-        processed_df['trade_date'] = target_date.strftime('%Y-%m-%d')
+        # 3. trade_dateの検証と補完
+        if 'trade_date' in processed_df.columns:
+            csv_dates = processed_df['trade_date'].unique()
+            if len(csv_dates) > 0 and csv_dates[0] != target_date_str:
+                print(f"⚠️  日付不一致: CSV内={csv_dates[0]}, 指定={target_date_str}")
+                # プロジェクトの慣習に従い、引数で指定された日付を優先して上書きする
+                processed_df['trade_date'] = target_date_str
+        else:
+            processed_df['trade_date'] = target_date_str
         
-        # 4. データベース保存
-        print("💾 データベースに保存中...")
+        # 4. market_amount計算
+        print("🔢 市中残存額を計算中...")
         batch_data = processed_df.to_dict('records')
+        
+        for record in batch_data:
+            bond_code = record.get('bond_code')
+            if bond_code:
+                market_amount = calculate_market_amount_for_record(
+                    bond_code, target_date_str
+                )
+                record['market_amount'] = market_amount
+
+        # 5. データベース保存
+        print("💾 データベースに保存中...")
         saved_count = db_manager.batch_insert_data(batch_data)
         
+        if saved_count == 0 and len(batch_data) > 0:
+            print("⚠️  バッチ保存失敗。")
+            
+            if debug:
+                print("🛠️  デバッグモード: 1件ずつ試行して詳細エラーを表示します。")
+                success_count = 0
+                for i, record in enumerate(batch_data):
+                    try:
+                        # 1件用リストにして保存
+                        if db_manager.batch_insert_data([record]) > 0:
+                            success_count += 1
+                        else:
+                            print(f"❌ 保存失敗 (Index {i}):")
+                            print(record)
+                            break # 最初のエラーで見つかれば十分
+                    except Exception as e:
+                        print(f"❌ エラー (Index {i}): {e}")
+                        print(record)
+                        break
+                
+                if success_count > 0:
+                    print(f"⚠️  一部のデータのみ保存されました ({success_count}/{len(batch_data)})")
+                    return True # 部分的成功
+            else:
+                print("💡 詳細なエラーを確認するには --debug オプションを使用してください。")
+                
+            return False
+
         if saved_count > 0:
             print(f"🎉 保存成功: {saved_count:,}件")
             
@@ -99,17 +188,13 @@ def collect_single_day_data(target_date_str):
 
 def main():
     """メイン実行"""
-    if len(sys.argv) != 2:
-        print("使用方法:")
-        print("  python collect_single_day.py YYYY-MM-DD")
-        print()
-        print("例:")
-        print("  python collect_single_day.py 2025-04-21")
-        return 1
+    parser = argparse.ArgumentParser(description='1日分データ収集スクリプト')
+    parser.add_argument('date', type=str, help='対象日付 (YYYY-MM-DD)')
+    parser.add_argument('--debug', action='store_true', help='デバッグモード有効化')
     
-    target_date_str = sys.argv[1]
+    args = parser.parse_args()
     
-    success = collect_single_day_data(target_date_str)
+    success = collect_single_day_data(args.date, debug=args.debug)
     
     if success:
         print("\n✅ 処理完了")

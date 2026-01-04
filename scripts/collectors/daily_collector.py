@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from data.processors.bond_data_processor import BondDataProcessor
@@ -107,7 +107,7 @@ class DailyDataCollector:
         """
         try:
             # MarketAmountCalculatorクラスのロジックを使用
-            from scripts.calculate_market_amount import MarketAmountCalculator
+            from data.utils.market_amount_calculator import MarketAmountCalculator
 
             calculator = MarketAmountCalculator()
             auction_history = calculator.get_auction_history(bond_code)
@@ -149,8 +149,8 @@ class DailyDataCollector:
                 target_date = date.fromisoformat(target_date_str)
 
                 # 1. CSVデータ取得
-                url, filename = self.processor.build_csv_url(target_date)
-                raw_df = self.processor.download_csv_data(url)
+                # download_data_for_dateを使用（年またぎ対応）
+                raw_df = self.processor.download_data_for_date(target_date)
 
                 if raw_df is None:
                     logger.warning(f"  ❌ CSVデータ取得失敗: {target_date_str}")
@@ -170,8 +170,19 @@ class DailyDataCollector:
                     logger.info(f"  📭 処理後データが空: {target_date_str}")
                     return 0
 
-                # 3. trade_date追加
-                processed_df['trade_date'] = target_date_str
+                # 3. trade_dateの検証と補完
+                if 'trade_date' in processed_df.columns:
+                    # CSV内の日付とターゲット日付が一致するか確認（ログ出力のみ）
+                    csv_dates = processed_df['trade_date'].unique()
+                    if len(csv_dates) > 0 and csv_dates[0] != target_date_str:
+                        logger.warning(f"  ⚠️  日付不一致: CSV内={csv_dates[0]}, 指定={target_date_str}")
+                        # JSDAの仕様上、ファイル名の日付(公表日)と中身の日付(公表日)は一致するはずだが、
+                        # 万が一不一致でも、管理上の日付(target_date_str)を優先する場合は上書きする。
+                        # ここではプロジェクトの慣習に従い、引数で指定された日付を優先して上書きする。
+                        processed_df['trade_date'] = target_date_str
+                else:
+                    # trade_dateがない場合は付与
+                    processed_df['trade_date'] = target_date_str
 
                 # 4. データベース保存前にmarket_amount計算
                 batch_data = processed_df.to_dict('records')

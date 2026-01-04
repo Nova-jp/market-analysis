@@ -534,11 +534,14 @@
                         }
 
                         if (filteredData.length > 0) {
+                            // 年限順にソート（グラフの描画崩れ防止）
+                            filteredData.sort((a, b) => a.maturity - b.maturity);
+
                             yieldChart.data.datasets.push({
                                 label: date,
                                 data: filteredData.map(point => ({
                                     x: point.maturity,
-                                    y: point.yield,
+                                    y: point.yield !== undefined ? point.yield : point.yield_rate,
                                     bond_code: point.bond_code,
                                     bond_name: point.bond_name
                                 })),
