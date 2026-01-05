@@ -1,6 +1,6 @@
 """
 金利スワップ(IRS)データ収集スケジューラーサービス
-JPXから毎日18:00に金利スワップデータを自動収集
+JPXから毎日20:00に金利スワップデータを自動収集
 """
 import logging
 from typing import Dict, Any, Optional

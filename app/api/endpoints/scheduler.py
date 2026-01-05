@@ -3,7 +3,7 @@ Cloud Scheduler用データ収集API
 
 スケジュール:
 - 毎日18:00: JSDAデータ収集 (daily-collection)
-- 毎日18:00: 金利スワップデータ収集 (irs-daily-collection) ★NEW
+- 毎日20:00: 金利スワップデータ収集 (irs-daily-collection) ★NEW
 - 毎月1日 6:00: 入札カレンダー取得 (calendar-refresh)
 - 毎日12:36: 入札結果収集 (auction-collection) ※入札がある日のみ実行
 
@@ -282,7 +282,7 @@ async def irs_daily_data_collection(
 ):
     """
     金利スワップ(IRS)データ収集エンドポイント
-    Cloud Schedulerから毎日18:00に呼び出される
+    Cloud Schedulerから毎日20:00に呼び出される
 
     JPXから金利スワップ清算値段を取得してSupabaseに保存
     """

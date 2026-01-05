@@ -24,6 +24,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     *   **構成**: FastAPI + Pydantic + SQLAlchemy のモダンな構成（Modern Python Stack）に準拠する。
 3.  **コード品質**: 型ヒント（Type Hints）、Linter（Ruff/Black）、テスト（Pytest）を重視し、堅牢なコードを書く。
 
+### Database Safety Rules (Mandatory)
+
+**Destructive Operations**: `DELETE`, `DROP`, `TRUNCATE`, `UPDATE` (without explicit WHERE clause), and schema migrations that may result in data loss.
+
+1. **Explicit Confirmation**: NEVER execute destructive database operations without explicit user confirmation.
+2. **Impact Analysis**: Explain exactly what data will be affected (e.g., "Deleting 2400 records from table X between dates Y and Z").
+3. **Backup Check**: Ask the user if they have a backup or if they want to perform a backup before proceeding (especially for Neon/Cloud SQL).
+4. **Dry Run**: Whenever possible, run a `SELECT` count query first to demonstrate the impact scope.
+
 ### JSDA サーバー保護ルール（必須）
 
 **警告**: 違反は即座にプロジェクト停止の対象
@@ -574,7 +583,9 @@ LOG_LEVEL=INFO
 ### デプロイメント
 
 - **Dockerfile**: Cloud Runデプロイメント設定
-- **Cloud Scheduler**: 毎日自動実行（18:00 JST）
+- **Cloud Scheduler**:
+  - JSDAデータ収集: 毎日18:00 JST
+  - IRSデータ収集: 毎日20:00 JST
 - **サービス**: Cloud Run（asia-northeast1）の `market-analytics`
 
 ## 📈 APIエンドポイント
