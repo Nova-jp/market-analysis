@@ -585,7 +585,7 @@ LOG_LEVEL=INFO
 - **Dockerfile**: Cloud Runデプロイメント設定
 - **Cloud Scheduler**:
   - JSDAデータ収集: 毎日18:00 JST
-  - IRSデータ収集: 毎日20:00 JST
+  - IRSデータ収集: 毎日21:00 JST
 - **サービス**: Cloud Run（asia-northeast1）の `market-analytics`
 
 ## 📈 APIエンドポイント

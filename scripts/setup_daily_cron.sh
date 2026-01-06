@@ -20,8 +20,8 @@ mkdir -p "$LOG_PATH"
 # 1. 毎日18:00にJSDAデータ収集
 CRON_JSDA="0 18 * * * cd $PROJECT_ROOT && source $VENV_PATH/bin/activate && python $SCRIPT_JSDA >> $LOG_PATH/cron_daily_collector.log 2>&1"
 
-# 2. 毎日20:00にIRSデータ収集
-CRON_IRS="0 20 * * * cd $PROJECT_ROOT && source $VENV_PATH/bin/activate && python $SCRIPT_IRS >> $LOG_PATH/cron_irs_collector.log 2>&1"
+# 2. 毎日21:00にIRSデータ収集
+CRON_IRS="0 21 * * * cd $PROJECT_ROOT && source $VENV_PATH/bin/activate && python $SCRIPT_IRS >> $LOG_PATH/cron_irs_collector.log 2>&1"
 
 echo "設定予定のcronエントリ:"
 echo "1. JSDA (18:00): $CRON_JSDA"
