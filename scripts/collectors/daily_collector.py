@@ -171,7 +171,18 @@ class DailyDataCollector:
                     return 0
 
                 # 3. trade_dateの検証と補完
-                if 'trade_date' in processed_df.columns:
+                
+                # HTML情報に基づく正確な取引日の特定（2026/1/5問題対応）
+                actual_trade_date = None
+                try:
+                    actual_trade_date = self.processor.determine_trade_date_from_html(target_date)
+                except Exception as e:
+                    logger.warning(f"  ⚠️  HTML日付特定失敗: {e}")
+
+                if actual_trade_date:
+                    logger.info(f"  📅 HTML情報により取引日を修正: {target_date_str} -> {actual_trade_date}")
+                    processed_df['trade_date'] = actual_trade_date.isoformat()
+                elif 'trade_date' in processed_df.columns:
                     # CSV内の日付とターゲット日付が一致するか確認（ログ出力のみ）
                     csv_dates = processed_df['trade_date'].unique()
                     if len(csv_dates) > 0 and csv_dates[0] != target_date_str:

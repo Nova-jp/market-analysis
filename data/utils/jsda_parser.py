@@ -8,11 +8,17 @@ from bs4 import BeautifulSoup
 import re
 import time
 from datetime import datetime, date
-from typing import List, Set
+from typing import List, Set, Optional, Dict
 import logging
+import json
+import os
+from pathlib import Path
 
 class JSDAParser:
     """JSDAサイトからデータ利用可能日付を解析するクラス"""
+    
+    # キャッシュファイルのパス（プロジェクトルートからの相対パス）
+    CACHE_FILE_PATH = "data_files/jsda_available_dates.json"
     
     def __init__(self):
         self.base_url = "https://market.jsda.or.jp"
@@ -21,55 +27,146 @@ class JSDAParser:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
     
-    def get_available_dates_from_html(self) -> List[date]:
+    def _get_cache_path(self) -> Path:
+        """キャッシュファイルの絶対パスを取得"""
+        # このファイル(data/utils/jsda_parser.py)からプロジェクトルート(../../)へ
+        current_dir = Path(__file__).resolve().parent
+        project_root = current_dir.parent.parent
+        return project_root / self.CACHE_FILE_PATH
+
+    def _load_cache(self) -> Optional[List[date]]:
+        """キャッシュファイルから日付リストを読み込む"""
+        cache_path = self._get_cache_path()
+        if not cache_path.exists():
+            return None
+        
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            dates_str = data.get('dates', [])
+            # 文字列 -> dateオブジェクト
+            dates = [date.fromisoformat(d) for d in dates_str]
+            self.logger.info(f"📂 キャッシュ読み込み成功: {len(dates)}日分 (更新: {data.get('last_updated')})")
+            return dates
+        except Exception as e:
+            self.logger.warning(f"キャッシュ読み込みエラー: {e}")
+            return None
+
+    def _save_cache(self, dates: List[date]):
+        """日付リストをキャッシュファイルに保存"""
+        cache_path = self._get_cache_path()
+        try:
+            # ディレクトリ作成
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 日付を文字列に変換して降順ソート
+            sorted_dates = sorted(list(set(dates)), reverse=True)
+            dates_str = [d.isoformat() for d in sorted_dates]
+            
+            data = {
+                "last_updated": datetime.now().isoformat(),
+                "dates": dates_str
+            }
+            
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+                
+            self.logger.info(f"💾 キャッシュ保存完了: {len(dates_str)}日分 -> {cache_path}")
+        except Exception as e:
+            self.logger.error(f"キャッシュ保存エラー: {e}")
+
+    def get_available_dates_from_html(self, start_year: int = 2002, use_cache: bool = True, force_refresh: bool = False) -> List[date]:
         """
         JSDAから利用可能なデータ日付を取得
-        メインページ + アーカイブページ（2002年〜現在）から全日付を取得
+        メインページ + アーカイブページから日付を取得
+        Args:
+            start_year: アーカイブ取得開始年（デフォルト: 2002）
+            use_cache: キャッシュを使用するかどうか（デフォルト: True）
+            force_refresh: キャッシュを無視して全件取得するか（デフォルト: False）
         """
         try:
-            self.logger.info("📡 JSDAサイトからデータ利用可能日付を取得中...")
+            # 1. キャッシュの使用を試みる
+            if use_cache and not force_refresh:
+                cached_dates = self._load_cache()
+                if cached_dates:
+                    # キャッシュがある場合、メインページだけ確認して差分更新（高速化）
+                    self.logger.info("📄 メインページから最新日付のみ確認中...")
+                    main_dates = self._parse_main_page()
+                    
+                    # 新しい日付があるか確認
+                    new_dates_found = False
+                    current_dates_set = set(cached_dates)
+                    
+                    for d in main_dates:
+                        if d not in current_dates_set:
+                            self.logger.info(f"🆕 新しい日付を発見: {d}")
+                            current_dates_set.add(d)
+                            new_dates_found = True
+                    
+                    # 更新があれば保存
+                    if new_dates_found:
+                        updated_dates = list(current_dates_set)
+                        self._save_cache(updated_dates)
+                        return sorted(updated_dates, reverse=True)
+                    else:
+                        self.logger.info("✅ キャッシュは最新です")
+                        return cached_dates
+
+            # 2. キャッシュがない、または強制更新の場合は全取得
+            self.logger.info("📡 JSDAサイトから全期間のデータ日付を取得中...")
             
             available_dates = set()
             today = date.today()
             current_year = today.year
             
-            # 1. メインページから最新の日付を取得
+            # メインページから最新の日付を取得
             self.logger.info("📄 メインページから最新日付を取得...")
             main_dates = self._parse_main_page()
             available_dates.update(main_dates)
             
-            # 2. アーカイブページから各年のデータを取得（2002年〜現在まで）
-            # より多くの過去データを取得するため2002年から開始
-            start_year = 2002  
-            for year in range(start_year, current_year + 1):
+            # アーカイブページから各年のデータを取得
+            real_start_year = max(start_year, 2002)
+            
+            for year in range(real_start_year, current_year + 1):
                 self.logger.info(f"📄 {year}年アーカイブページを取得中...")
                 archive_dates = self._parse_archive_page(year)
                 available_dates.update(archive_dates)
                 
-                # JSDA接続制限回避のため20秒待機（ユーザー要求）
-                if year < current_year:  # 最後の年以外
-                    self.logger.info(f"  ⏱️  20秒待機中...")
-                    time.sleep(20)
+                # JSDA接続制限回避のため待機
+                if year < current_year and real_start_year < current_year:
+                    self.logger.info(f"  ⏱️  30秒待機中...")
+                    time.sleep(30)
             
             if len(available_dates) > 0:
-                # 日付を降順でソート（今日から昔へ）
+                # 日付を降順でソート
                 sorted_dates = sorted(list(available_dates), reverse=True)
                 
                 # 現在日より未来の日付を除外
-                today = date.today()
                 filtered_dates = [d for d in sorted_dates if d <= today]
                 
                 self.logger.info(f"✅ JSDA HTML解析成功: {len(filtered_dates)}日分")
                 if filtered_dates:
                     self.logger.info(f"📅 最新: {filtered_dates[0]} ～ 最古: {filtered_dates[-1]}")
+                    # キャッシュに保存
+                    self._save_cache(filtered_dates)
                 
                 return filtered_dates
             
         except Exception as e:
             self.logger.error(f"JSDAサイト解析エラー: {e}")
+            # エラー時でもキャッシュがあればそれを返す
+            if use_cache:
+                cached = self._load_cache()
+                if cached:
+                    self.logger.info("⚠️ エラー発生のため、既存のキャッシュを使用します")
+                    return cached
         
-        # HTMLからの取得に失敗した場合、ファイル存在確認による取得を試行
-        return self._get_dates_by_file_checking()
+        # HTMLからの取得に失敗した場合
+        if start_year <= 2020:
+             return self._get_dates_by_file_checking()
+        else:
+             return []
     
     def _get_dates_by_file_checking(self) -> List[date]:
         """
@@ -237,6 +334,9 @@ class JSDAParser:
                 self.logger.info(f"  📡 {year}年データ取得中... (試行 {attempt + 1}/{max_retries})")
                 
                 response = requests.get(archive_url, timeout=timeout_seconds)
+                if response.status_code == 404:
+                    self.logger.info(f"  {year}年: アーカイブページがまだありません(404)")
+                    return set()
                 response.raise_for_status()
                 
                 if response.encoding is None or response.encoding == 'ISO-8859-1':

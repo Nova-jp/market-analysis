@@ -27,6 +27,7 @@ class BondDataProcessor:
         self.base_url = "https://market.jsda.or.jp/shijyo/saiken/baibai/baisanchi/files"
         self.supabase_url = os.getenv('SUPABASE_URL')
         self.supabase_key = os.getenv('SUPABASE_KEY')
+        self._available_dates_cache = None  # HTML日付リストのキャッシュ
         
         # 異常値パターン定義
         self.invalid_values = {
@@ -85,6 +86,58 @@ class BondDataProcessor:
         while prev.weekday() >= 5 or jpholiday.is_holiday(prev):
             prev -= timedelta(days=1)
         return prev
+
+    def determine_trade_date_from_html(self, target_date: date) -> Optional[date]:
+        """
+        HTMLの日付リストに基づいて、指定された公表日に対応する実際の取引日を特定する
+        
+        ルール: HTMLにある日付リストの中で、target_dateの一つ前の日付を取引日とする
+        例: リスト [..., 2026-01-05, 2025-12-30, ...] で target_date が 2026-01-05 の場合、
+            2025-12-30 を返す。
+        """
+        from ..utils.jsda_parser import JSDAParser
+        
+        try:
+            # キャッシュをチェック
+            if self._available_dates_cache is None:
+                parser = JSDAParser()
+                # 最新のデータのみチェック（高速化のため今年または必要なら前年から）
+                # 年またぎ（1月）の場合は前年のデータも必要
+                search_start_year = target_date.year
+                if target_date.month <= 2: # 1月2月あたりは前年も見ておく
+                    search_start_year -= 1
+                
+                # 2002年より前にはならないように
+                search_start_year = max(search_start_year, 2002)
+                
+                # 日付リストを取得（降順）
+                self.logger.info(f"HTML日付リストを取得中 (開始年: {search_start_year})...")
+                self._available_dates_cache = parser.get_available_dates_from_html(start_year=search_start_year)
+            
+            available_dates = self._available_dates_cache
+            
+            if not available_dates:
+                return None
+            
+            # target_dateを探す
+            if target_date in available_dates:
+                index = available_dates.index(target_date)
+                
+                # 一つ前の日付（リストは降順なので、インデックス+1）
+                if index + 1 < len(available_dates):
+                    prev_date = available_dates[index + 1]
+                    self.logger.info(f"HTML日付補正: 公表日 {target_date} -> 取引日 {prev_date}")
+                    return prev_date
+                else:
+                    self.logger.warning(f"公表日 {target_date} はリストの最古です（これより前の日付が見つかりません）")
+            else:
+                self.logger.warning(f"公表日 {target_date} がHTMLの日付リストに見つかりません")
+            
+            return None
+                
+        except Exception as e:
+            self.logger.error(f"HTML日付判定エラー: {e}")
+            return None
 
     def build_csv_url(self, date_obj) -> tuple:
         """CSVファイルURLを構築し、実際の取引日を計算

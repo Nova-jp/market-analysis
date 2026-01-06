@@ -12,7 +12,7 @@ from datetime import datetime
 import logging
 
 # プロジェクトルートをパスに追加
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
@@ -59,7 +59,7 @@ def collect_single_day_data(processor, db_manager, target_date_str, retry_count=
             target_date = date.fromisoformat(target_date_str)
             
             # 1. CSVデータ取得
-            url, filename = processor.build_csv_url(target_date)
+            url, filename, _ = processor.build_csv_url(target_date)
             raw_df = processor.download_csv_data(url)
             
             if raw_df is None:
@@ -78,7 +78,19 @@ def collect_single_day_data(processor, db_manager, target_date_str, retry_count=
                 return 0
             
             # 3. trade_date追加
-            processed_df['trade_date'] = target_date_str
+            
+            # HTML情報に基づく正確な取引日の特定（2026/1/5問題対応）
+            actual_trade_date = None
+            try:
+                actual_trade_date = processor.determine_trade_date_from_html(target_date)
+            except Exception as e:
+                logger.warning(f"  ⚠️  HTML日付特定失敗: {e}")
+
+            if actual_trade_date:
+                logger.info(f"  📅 HTML情報により取引日を修正: {target_date_str} -> {actual_trade_date}")
+                processed_df['trade_date'] = actual_trade_date.isoformat()
+            else:
+                processed_df['trade_date'] = target_date_str
             
             # 4. データベース保存
             batch_data = processed_df.to_dict('records')
@@ -186,10 +198,10 @@ def main():
             failed_count += 1
             logger.info(f"  📉 累計失敗: {failed_count}日")
         
-        # 次の日付への間隔（JSDAサーバー保護のため30秒）
+        # 次回収集対象日付への間隔（JSDAサーバー保護のため300秒）
         if i < len(new_dates):
-            logger.info(f"  ⏱️  30秒待機してから次の日付へ...")
-            time.sleep(30)  # 30秒間隔で次へ
+            logger.info(f"  ⏱️  300秒待機してから次の日付へ...")
+            time.sleep(300)  # 300秒間隔で次へ
     
     # 結果サマリー
     logger.info("=" * 60)

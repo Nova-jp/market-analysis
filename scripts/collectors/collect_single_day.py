@@ -15,11 +15,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
 
-def calculate_market_amount_for_record(bond_code: str, trade_date: str):
+def calculate_market_amount_for_record(calculator, bond_code: str, trade_date: str):
     """
     1レコード分のmarket_amountを計算
 
     Args:
+        calculator: MarketAmountCalculator インスタンス
         bond_code: 銘柄コード
         trade_date: 取引日 (YYYY-MM-DD)
 
@@ -27,9 +28,6 @@ def calculate_market_amount_for_record(bond_code: str, trade_date: str):
         market_amount (億円), 計算不可時はNone
     """
     try:
-        from data.utils.market_amount_calculator import MarketAmountCalculator
-
-        calculator = MarketAmountCalculator()
         auction_history = calculator.get_auction_history(bond_code)
         boj_history = calculator.get_boj_holdings_history(bond_code)
 
@@ -50,7 +48,7 @@ def calculate_market_amount_for_record(bond_code: str, trade_date: str):
             return cumulative
 
     except Exception as e:
-        print(f"⚠️ market_amount計算エラー ({bond_code}, {trade_date}): {e}")
+        # print(f"⚠️ market_amount計算エラー ({bond_code}, {trade_date}): {e}")
         return None
 
 def collect_single_day_data(target_date_str, debug=False):
@@ -113,26 +111,50 @@ def collect_single_day_data(target_date_str, debug=False):
         print(f"✅ データ処理成功: {len(processed_df):,}行")
         
         # 3. trade_dateの検証と補完
-        if 'trade_date' in processed_df.columns:
-            csv_dates = processed_df['trade_date'].unique()
-            if len(csv_dates) > 0 and csv_dates[0] != target_date_str:
-                print(f"⚠️  日付不一致: CSV内={csv_dates[0]}, 指定={target_date_str}")
-                # プロジェクトの慣習に従い、引数で指定された日付を優先して上書きする
-                processed_df['trade_date'] = target_date_str
+        
+        # HTML情報に基づく正確な取引日の特定（2026/1/5問題対応）
+        actual_trade_date = None
+        try:
+            actual_trade_date = processor.determine_trade_date_from_html(target_date)
+        except Exception as e:
+            print(f"⚠️  HTML日付特定失敗: {e}")
+
+        if actual_trade_date:
+            print(f"📅 HTML情報により取引日を特定: {target_date_str} -> {actual_trade_date}")
+            processed_df['trade_date'] = actual_trade_date.isoformat()
+            # market_amount計算用にも補正後の日付を使用する
+            final_trade_date_str = actual_trade_date.isoformat()
         else:
-            processed_df['trade_date'] = target_date_str
+            if 'trade_date' in processed_df.columns:
+                csv_dates = processed_df['trade_date'].unique()
+                if len(csv_dates) > 0 and csv_dates[0] != target_date_str:
+                    print(f"⚠️  日付不一致: CSV内={csv_dates[0]}, 指定={target_date_str}")
+                    processed_df['trade_date'] = target_date_str
+            else:
+                processed_df['trade_date'] = target_date_str
+            final_trade_date_str = target_date_str
         
-        # 4. market_amount計算
-        print("🔢 市中残存額を計算中...")
+        # 4. market_amount計算（今回はスキップ）
+        # print("🔢 市中残存額を計算中...")
+        # from data.utils.market_amount_calculator import MarketAmountCalculator
+        # calculator = MarketAmountCalculator()
+        
+        # batch_data = processed_df.to_dict('records')
+        
+        # total_records = len(batch_data)
+        # for i, record in enumerate(batch_data):
+            # if i % 100 == 0:
+                # print(f"   進捗: {i}/{total_records}...")
+            
+            # bond_code = record.get('bond_code')
+            # if bond_code:
+                # market_amount = calculate_market_amount_for_record(
+                    # calculator, bond_code, final_trade_date_str
+                # )
+                # record['market_amount'] = market_amount
+
+        # 計算スキップ時はそのまま辞書化
         batch_data = processed_df.to_dict('records')
-        
-        for record in batch_data:
-            bond_code = record.get('bond_code')
-            if bond_code:
-                market_amount = calculate_market_amount_for_record(
-                    bond_code, target_date_str
-                )
-                record['market_amount'] = market_amount
 
         # 5. データベース保存
         print("💾 データベースに保存中...")
