@@ -48,82 +48,67 @@ class PCAService:
             print(f"日付取得エラー: {e}")
             return []
 
-    def get_yield_data_for_date(self, date: str, with_bond_code: bool = False) -> pd.DataFrame:
-        """指定日のイールドカーブデータを取得"""
-        
-        # 必要なカラムを選択
-        columns = ['trade_date', 'due_date', 'ave_compound_yield']
-        if with_bond_code:
-            columns.extend(['bond_code', 'bond_name'])
+    def get_yield_data_bulk(self, dates: List[str]) -> pd.DataFrame:
+        """指定された複数の日付のデータを一括取得"""
+        if not dates:
+            return pd.DataFrame()
             
-        # SQLクエリ構築
-        select_clause = ", ".join(columns)
+        # プレースホルダを作成
+        placeholders = ', '.join(['%s'] * len(dates))
+        
         query = f"""
-            SELECT {select_clause}
+            SELECT trade_date, due_date, ave_compound_yield, bond_code, bond_name
             FROM bond_data
-            WHERE trade_date = %s
+            WHERE trade_date IN ({placeholders})
               AND ave_compound_yield IS NOT NULL
               AND due_date IS NOT NULL
         """
         
         try:
-            # select_as_dictを使用して辞書のリストを取得
-            rows = self.db_manager.select_as_dict(query, (date,))
+            # タプルとしてパラメータを渡す
+            rows = self.db_manager.select_as_dict(query, tuple(dates))
             if not rows:
                 return pd.DataFrame()
             
-            # データ処理ループ
-            data_list = []
-            for row in rows:
-                try:
-                    # 辞書キーでアクセス
-                    trade_date_val = row['trade_date']
-                    due_date_val = row['due_date']
-                    yield_val = row['ave_compound_yield']
-                    
-                    # 日付オブジェクトに確実に変換
-                    if isinstance(trade_date_val, str):
-                        trade_dt = datetime.strptime(trade_date_val, '%Y-%m-%d').date()
-                    elif isinstance(trade_date_val, datetime):
-                        trade_dt = trade_date_val.date()
-                    else:
-                        trade_dt = trade_date_val # date object
-                        
-                    if isinstance(due_date_val, str):
-                        due_dt = datetime.strptime(due_date_val, '%Y-%m-%d').date()
-                    elif isinstance(due_date_val, datetime):
-                        due_dt = due_date_val.date()
-                    else:
-                        due_dt = due_date_val # date object
-                    
-                    # maturity計算 (dateオブジェクト同士の減算はtimedeltaを返す)
-                    maturity_years = (due_dt - trade_dt).days / 365.25
-
-                    if maturity_years >= self.MIN_MATURITY:
-                        data_dict = {
-                            'maturity': round(maturity_years, 4),
-                            'yield': float(yield_val)
-                        }
-                        if with_bond_code:
-                            data_dict['bond_code'] = self.normalize_bond_code(row['bond_code'])
-                            data_dict['bond_name'] = str(row['bond_name']) if row['bond_name'] else 'N/A'
-                        data_list.append(data_dict)
-                except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).error(f"Row processing error: {e}")
-                    continue
-
-            df = pd.DataFrame(data_list)
-            if with_bond_code and not df.empty:
-                df['bond_code'] = df['bond_code'].astype(str)
-                df['bond_name'] = df['bond_name'].astype(str)
-
-            return df
+            # DataFrame作成
+            df = pd.DataFrame(rows)
+            
+            # 日付型変換
+            df['trade_date'] = pd.to_datetime(df['trade_date']).dt.date
+            df['due_date'] = pd.to_datetime(df['due_date']).dt.date
+            
+            # maturity計算
+            # dateオブジェクト同士の減算はtimedeltaを返す -> daysプロパティで日数取得
+            df['maturity'] = df.apply(lambda x: (x['due_date'] - x['trade_date']).days / 365.25, axis=1)
+            
+            # 最小残存期間フィルタ
+            df = df[df['maturity'] >= self.MIN_MATURITY].copy()
+            
+            # データ型変換
+            df['yield'] = df['ave_compound_yield'].astype(float)
+            df['bond_code'] = df['bond_code'].apply(self.normalize_bond_code)
+            df['bond_name'] = df['bond_name'].astype(str)
+            df['maturity'] = df['maturity'].round(4)
+            
+            # trade_dateを文字列に戻す（後の処理のため）
+            df['trade_date_str'] = df['trade_date'].astype(str)
+            
+            return df[['trade_date_str', 'maturity', 'yield', 'bond_code', 'bond_name']]
             
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error(f"イールドデータ取得エラー ({date}): {e}")
+            logging.getLogger(__name__).error(f"一括データ取得エラー: {e}")
             return pd.DataFrame()
+
+    def get_yield_data_for_date(self, date: str, with_bond_code: bool = False) -> pd.DataFrame:
+        """指定日のイールドカーブデータを取得 (互換性維持)"""
+        df = self.get_yield_data_bulk([date])
+        if df.empty:
+            return pd.DataFrame()
+            
+        if not with_bond_code:
+            return df[['maturity', 'yield']]
+        return df[['maturity', 'yield', 'bond_code', 'bond_name']]
 
     def interpolate_yield_curves(
         self,
@@ -220,16 +205,18 @@ class PCAService:
         date_index: int,
         pca_model: PCA,
         X_pca: np.ndarray,
-        common_grid: np.ndarray
+        common_grid: np.ndarray,
+        actual_data: pd.DataFrame = None 
     ) -> pd.DataFrame:
         """
         指定日のデータを復元
 
-        Returns:
-            DataFrame with columns: maturity, bond_code, bond_name, original_yield, reconstructed_yield, error
+        Args:
+            actual_data: その日の実データ (DataFrame)
         """
-        # 実データを取得
-        actual_data = self.get_yield_data_for_date(date_str, with_bond_code=True)
+        if actual_data is None:
+            actual_data = self.get_yield_data_for_date(date_str, with_bond_code=True)
+            
         # 残存年限の昇順でソート
         actual_data = actual_data.sort_values('maturity', ascending=True).reset_index(drop=True)
 
@@ -246,8 +233,8 @@ class PCAService:
         for idx, row in actual_data.iterrows():
             maturity = row['maturity']
             original_yield = row['yield']
-            bond_code = row['bond_code']
-            bond_name = row['bond_name']
+            bond_code = row.get('bond_code', '')
+            bond_name = row.get('bond_name', '')
 
             # common_gridで最も近いインデックスを探す
             grid_idx = np.argmin(np.abs(common_grid - maturity))
@@ -265,15 +252,18 @@ class PCAService:
             })
 
         df = pd.DataFrame(reconstruction_results)
-
+        
         if not df.empty:
-            df['bond_code'] = df['bond_code'].astype(str)
-            df['bond_name'] = df['bond_name'].astype(str)
+             df['bond_code'] = df['bond_code'].astype(str)
+             df['bond_name'] = df['bond_name'].astype(str)
 
         return df
 
     def calculate_error_statistics(self, reconstruction_df: pd.DataFrame) -> Dict:
         """復元誤差の統計量を計算"""
+        if reconstruction_df.empty:
+             return {}
+             
         errors = reconstruction_df['error'].values
         abs_errors = np.abs(errors)
 
@@ -293,14 +283,7 @@ class PCAService:
         n_components: int = 3
     ) -> Dict:
         """
-        完全なPCA分析を実行
-
-        Args:
-            lookback_days: PCA学習に使用する営業日数
-            n_components: 主成分の数
-
-        Returns:
-            分析結果の辞書
+        完全なPCA分析を実行 (最適化版: 一括取得)
         """
         import logging
         logger = logging.getLogger(__name__)
@@ -310,12 +293,18 @@ class PCAService:
         target_dates = available_dates[:lookback_days]
         logger.info(f"取得した日付数: {len(target_dates)}")
 
-        # 2. イールドカーブデータ取得
+        if not target_dates:
+             return {"error": "No dates available"}
+
+        # 2. イールドカーブデータ一括取得
+        bulk_df = self.get_yield_data_bulk(target_dates)
+        
         daily_data = {}
+        # 日付ごとに分割して辞書に格納
         for date in target_dates:
-            df = self.get_yield_data_for_date(date, with_bond_code=False)
-            if not df.empty:
-                daily_data[date] = df
+            day_df = bulk_df[bulk_df['trade_date_str'] == date].copy()
+            if not day_df.empty:
+                daily_data[date] = day_df
 
         logger.info(f"有効な日数: {len(daily_data)} / {len(target_dates)}")
 
@@ -323,14 +312,19 @@ class PCAService:
         X, common_grid, valid_dates = self.interpolate_yield_curves(daily_data)
         logger.info(f"補間後の有効日数: {len(valid_dates)}, データ形状: {X.shape}")
 
+        if len(valid_dates) < 2:
+             return {"error": "Not enough valid data for PCA"}
+
         # 4. PCA実行
         pca, X_pca = self.perform_pca(X, n_components)
 
         # 5. 全日付の復元データを計算
         all_reconstructions = {}
         for idx, date in enumerate(valid_dates):
+            original_df = daily_data[date]
+            
             reconstruction_df = self.reconstruct_date(
-                date, idx, pca, X_pca, common_grid
+                date, idx, pca, X_pca, common_grid, actual_data=original_df
             )
             error_stats = self.calculate_error_statistics(reconstruction_df)
 
@@ -365,8 +359,8 @@ class PCAService:
                 'dates': valid_dates,  # 全日付リスト
                 'all_dates': all_reconstructions,  # 全日付の復元データ
                 'latest_date': latest_date,
-                'data': all_reconstructions[latest_date]['data'],  # 最新日のデータ（後方互換性）
-                'statistics': all_reconstructions[latest_date]['statistics']  # 最新日の統計（後方互換性）
+                'data': all_reconstructions[latest_date]['data'],
+                'statistics': all_reconstructions[latest_date]['statistics']
             },
             'common_grid': common_grid.tolist()
         }
@@ -376,13 +370,6 @@ class PCAService:
     def get_swap_data(self, product_type: str = 'OIS', limit_days: int = 300) -> pd.DataFrame:
         """
         スワップ金利データを取得し、ピボットテーブル形式で返す
-        
-        Args:
-            product_type: プロダクトタイプ (OIS, 6M_TIBOR etc.)
-            limit_days: 取得する最大日数
-            
-        Returns:
-            pd.DataFrame: index=date, columns=maturity(float), values=rate
         """
         # 最新の日付を取得
         dates_query = """
@@ -417,20 +404,10 @@ class PCAService:
                 return pd.DataFrame()
             
             df = pd.DataFrame(rows)
-            
-            # rateをfloatに変換 (DecimalだとPCAでエラーになるため)
             df['rate'] = df['rate'].astype(float)
-            
-            # tenorを数値に変換 ('10Y' -> 10.0)
             df['maturity'] = df['tenor'].str.replace('Y', '').astype(float)
-            
-            # ピボット (行: 日付, 列: 残存期間, 値: 金利)
             pivot_df = df.pivot(index='trade_date', columns='maturity', values='rate')
-            
-            # 日付で降順ソート
             pivot_df = pivot_df.sort_index(ascending=False)
-            
-            # 欠損がある行を削除（PCAには完全なデータが必要）
             pivot_df = pivot_df.dropna()
             
             return pivot_df
@@ -447,35 +424,25 @@ class PCAService:
     ) -> Dict:
         """
         スワップ金利の主成分分析を実行
-
-        Args:
-            lookback_days: PCA学習に使用する営業日数
-            n_components: 主成分の数
-            product_type: 'OIS' など
-
-        Returns:
-            分析結果の辞書
         """
         import logging
         logger = logging.getLogger(__name__)
 
         # 1. データ取得
-        # 少し多めに取得して、欠損除去後にlookback_days分確保できるようにする
         fetch_days = int(lookback_days * 1.5)
         df_pivot = self.get_swap_data(product_type, limit_days=fetch_days)
         
         if df_pivot.empty:
              return {"error": "No data available"}
 
-        # 指定日数分に切り詰め
         df_target = df_pivot.head(lookback_days)
         
-        if len(df_target) < 10: # データが少なすぎる場合
+        if len(df_target) < 10:
              return {"error": f"Insufficient data: {len(df_target)} days available"}
 
         valid_dates = [d.strftime('%Y-%m-%d') for d in df_target.index]
         X = df_target.values
-        common_grid = df_target.columns.values # float array of maturities
+        common_grid = df_target.columns.values
 
         logger.info(f"Swap PCA対象データ: {X.shape}, 期間: {valid_dates[-1]} ~ {valid_dates[0]}")
 
@@ -483,11 +450,9 @@ class PCAService:
         pca, X_pca = self.perform_pca(X, n_components)
 
         # 3. 復元と誤差計算
-        # Swapの場合は補間がないので、直接PCA結果から復元して比較
         mean_vec = pca.mean_
         reconstructed_matrix = mean_vec + np.dot(X_pca, pca.components_)
         
-        # 全日付の結果を構築
         all_reconstructions = {}
         
         for i, date_str in enumerate(valid_dates):
@@ -495,7 +460,6 @@ class PCAService:
             reconstructed_row = reconstructed_matrix[i, :]
             errors = original_row - reconstructed_row
             
-            # データリスト作成
             data_list = []
             for j, maturity in enumerate(common_grid):
                 data_list.append({
@@ -503,11 +467,10 @@ class PCAService:
                     'original_yield': float(original_row[j]),
                     'reconstructed_yield': float(reconstructed_row[j]),
                     'error': float(errors[j]),
-                    'bond_code': f"SWAP_{int(maturity)}Y", # ダミーコード
+                    'bond_code': f"SWAP_{int(maturity)}Y",
                     'bond_name': f"{product_type} {int(maturity)}Y"
                 })
             
-            # 統計量
             abs_errors = np.abs(errors)
             stats = {
                 'mae': float(abs_errors.mean()),

@@ -47,6 +47,11 @@ def deploy():
         "--region", region,
         "--allow-unauthenticated",
         "--port", "8080",
+        "--memory", "1Gi",
+        "--cpu", "1",
+        "--cpu-boost",
+        "--min-instances", "0",
+        "--max-instances", "1",
         "--set-env-vars", f"DB_HOST={db_host},DB_PORT={db_port},DB_NAME={db_name},DB_USER={db_user},DB_PASSWORD={db_password}"
     ]
     

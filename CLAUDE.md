@@ -443,17 +443,21 @@ cp .env.example .env
 
 ### 仮想環境ルール（必須）
 
-**重要**: Pythonコードの実行は必ず仮想環境内で行うこと
+**重要**: Pythonコードの実行は必ず仮想環境内で行うこと。ローカルシステム（グローバル環境）のPythonは絶対に使用しない。
 
-1. 実行前に有効化: `source venv/bin/activate`
-2. グローバル環境へのpip install禁止 - venv内でのみ実行
-3. Claude Codeは必ずプレフィックス: `source venv/bin/activate && python3 script.py`
+1. **実行方法の原則**: 仮想環境の実行ファイルを直接指定するか、有効化してから実行する。
+2. **推奨**: `./venv/bin/python script.py` のようにパスを直接指定する（非対話型実行で最も確実）。
+3. **代替**: `source venv/bin/activate && python script.py`
+4. **禁止**: グローバル環境への `pip install` およびグローバル `python` での実行。
 
 ```bash
-# ✅ 正しい実行方法
-source venv/bin/activate && python3 scripts/collect_single_day.py
+# ✅ 推奨される実行方法（確実）
+./venv/bin/python scripts/collect_single_day.py
 
-# ❌ 間違った実行方法（グローバル環境を汚染する）
+# ✅ 有効化して実行
+source venv/bin/activate && python scripts/collect_single_day.py
+
+# ❌ 絶対に禁止（グローバル環境を汚染する）
 python3 scripts/collect_single_day.py
 ```
 
