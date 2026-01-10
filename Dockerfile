@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリケーションコードをコピー
 COPY app/ app/
 COPY data/ data/
+COPY analysis/ analysis/
 COPY templates/ templates/
 COPY static/ static/
 COPY data_files/ data_files/
