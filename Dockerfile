@@ -1,6 +1,6 @@
 # Cloud Run用Dockerfile
-# ローカル開発とCloud Run本番環境で同じコードベースを使用
-FROM python:3.9-slim
+# Python 3.11を使用して最新のライブラリ（QuantLib等）に対応
+FROM python:3.11-slim
 
 # 作業ディレクトリ
 WORKDIR /app
