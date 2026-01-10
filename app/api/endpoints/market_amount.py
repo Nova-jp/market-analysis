@@ -29,12 +29,9 @@ async def get_market_amount(
                 detail="Invalid date format. Use YYYY-MM-DD"
             )
 
-        # 2. データベースクエリ
-        result = await db_manager.get_bond_data({
-            'select': 'trade_date,due_date,market_amount,bond_code',
+        # 2. データベースクエリ (新テーブル bond_market_amount を参照)
+        result = await db_manager.get_market_amount_data({
             'trade_date': f'eq.{date}',
-            'market_amount': 'not.is.null',
-            'due_date': 'not.is.null',
             'limit': 10000
         })
 
@@ -59,13 +56,17 @@ async def get_market_amount(
 
         for row in result["data"]:
             try:
-                # 残存年限計算（yield_data.pyと同じロジック）
+                # 結合先の bond_data がない（銘柄詳細不明）場合はスキップ
+                if not row.get('due_date'):
+                    continue
+
+                # 残存年限計算
                 trade_dt = datetime.strptime(row['trade_date'], '%Y-%m-%d')
                 due_dt = datetime.strptime(row['due_date'], '%Y-%m-%d')
                 days_to_maturity = (due_dt - trade_dt).days
                 years_to_maturity = days_to_maturity / 365.25
 
-                # バケット判定（可変区切り幅）
+                # バケット判定
                 bucket_index = int(years_to_maturity / bucket_size)
 
                 # 範囲内のみ集計
@@ -74,7 +75,7 @@ async def get_market_amount(
                     buckets[bucket_index] += market_amt
                     total_amount += market_amt
                     bond_count += 1
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, KeyError):
                 continue
 
         # 4. レスポンス生成
@@ -125,11 +126,9 @@ async def get_bond_market_amount_timeseries(
     }
     """
     try:
-        # パラメータ構築
+        # パラメータ構築 (新テーブル bond_market_amount を参照)
         params = {
-            'select': 'trade_date,market_amount,bond_name,due_date',
             'bond_code': f'eq.{bond_code}',
-            'market_amount': 'not.is.null',
             'order': 'trade_date.asc',
             'limit': 10000
         }
@@ -142,8 +141,8 @@ async def get_bond_market_amount_timeseries(
         elif end_date:
             params['trade_date'] = f'lte.{end_date}'
 
-        # データ取得
-        result = await db_manager.get_bond_data(params)
+        # データ取得 (修正後のメソッドを使用)
+        result = await db_manager.get_market_amount_data(params)
 
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["error"])
@@ -176,8 +175,8 @@ async def get_bond_market_amount_timeseries(
 
         return BondTimeseriesResponse(
             bond_code=bond_code,
-            bond_name=result["data"][0]['bond_name'],
-            due_date=result["data"][0]['due_date'],
+            bond_name=result["data"][0].get('bond_name', f"Bond {bond_code}"),
+            due_date=result["data"][0].get('due_date', "N/A"),
             timeseries=timeseries,
             statistics=statistics
         )
@@ -195,31 +194,15 @@ async def search_bonds(
 ):
     """
     銘柄一覧を取得（検索用）
-
-    Response:
-    {
-        "bonds": [
-            {
-                "bond_code": "003720067",
-                "bond_name": "第372回利付国債(10年)",
-                "due_date": "2033-09-20",
-                "latest_market_amount": 98765,
-                "latest_trade_date": "2025-09-05"
-            },
-            ...
-        ],
-        "count": 30
-    }
     """
     try:
+        # パラメータ構築 (新テーブル bond_market_amount を参照)
         params = {
-            'select': 'bond_code,bond_name,due_date,market_amount,trade_date',
-            'market_amount': 'not.is.null',
             'order': 'trade_date.desc',
             'limit': limit * 10  # 後で絞り込むため多めに取得
         }
 
-        result = await db_manager.get_bond_data(params)
+        result = await db_manager.get_market_amount_data(params)
 
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["error"])
@@ -231,8 +214,8 @@ async def search_bonds(
             if bond_code not in bonds_dict:
                 bonds_dict[bond_code] = BondSearchItem(
                     bond_code=bond_code,
-                    bond_name=row['bond_name'],
-                    due_date=row['due_date'],
+                    bond_name=row.get('bond_name', f"Bond {bond_code}"),
+                    due_date=row.get('due_date', "N/A"),
                     latest_market_amount=float(row['market_amount']),
                     latest_trade_date=row['trade_date']
                 )

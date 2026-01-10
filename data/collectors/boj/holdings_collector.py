@@ -75,13 +75,10 @@ class BOJHoldingsCollector:
             delay_seconds: リクエスト間隔（秒）。日銀サーバー保護のため5秒以上を推奨
         """
         self.delay_seconds = delay_seconds
-        self.supabase_url = os.getenv('SUPABASE_URL')
-        self.supabase_key = os.getenv('SUPABASE_KEY')
-        self.headers = {
-            'apikey': self.supabase_key,
-            'Authorization': f'Bearer {self.supabase_key}',
-            'Content-Type': 'application/json'
-        }
+        
+        # データベースマネージャーの初期化
+        from data.utils.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
 
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
@@ -416,26 +413,16 @@ class BOJHoldingsCollector:
             return 0
 
         success_count = 0
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
-
-            try:
-                response = requests.post(
-                    f'{self.supabase_url}/rest/v1/boj_holdings',
-                    headers=self.headers,
-                    json=batch
-                )
-
-                if response.status_code in [200, 201]:
-                    success_count += len(batch)
-                elif "duplicate key" in response.text:
-                    # 重複は正常扱い
-                    success_count += len(batch)
-                else:
-                    self.logger.warning(f"保存失敗: {response.status_code} - {response.text[:200]}")
-
-            except Exception as e:
-                self.logger.error(f"保存エラー: {e}")
+        try:
+            # batch_insert_dataを使用
+            count = self.db_manager.batch_insert_data(
+                records, 
+                table_name='boj_holdings', 
+                batch_size=batch_size
+            )
+            success_count = count
+        except Exception as e:
+            self.logger.error(f"保存エラー: {e}")
 
         return success_count
 

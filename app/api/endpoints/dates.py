@@ -12,7 +12,10 @@ router = APIRouter()
 
 
 @router.get("/api/search-dates", response_model=DateSearchResponse)
-async def search_dates(q: str = Query("", description="検索クエリ (YYYY-MM-DD)")):
+async def search_dates(
+    q: str = Query("", description="検索クエリ (YYYY-MM-DD)"),
+    table: str = Query("bond_data", description="参照テーブル (bond_data or bond_market_amount)")
+):
     """日付検索API - YYYY-MM-DD形式での日付検索"""
     if len(q) < 4:
         return DateSearchResponse(dates=[])
@@ -24,10 +27,9 @@ async def search_dates(q: str = Query("", description="検索クエリ (YYYY-MM-
                 return DateSearchResponse(dates=[])
 
             result = await db_manager.get_bond_data({
-                'select': 'trade_date',
                 'trade_date': f'eq.{q}',
                 'limit': 1
-            })
+            }, table_name=table)
 
             if result["success"]:
                 return DateSearchResponse(
@@ -37,11 +39,10 @@ async def search_dates(q: str = Query("", description="検索クエリ (YYYY-MM-
         # 部分入力の場合
         else:
             result = await db_manager.get_bond_data({
-                'select': 'trade_date',
                 'trade_date': f'gte.{q}',
                 'order': 'trade_date.desc',
-                'limit': 50
-            })
+                'limit': 100
+            }, table_name=table)
 
             if result["success"]:
                 # 入力文字列で始まる日付のみフィルタリング
@@ -64,29 +65,26 @@ async def search_dates(q: str = Query("", description="検索クエリ (YYYY-MM-
 
 
 @router.get("/api/quick-dates", response_model=QuickDatesResponse)
-async def get_quick_dates():
+async def get_quick_dates(
+    table: str = Query("bond_data", description="参照テーブル (bond_data or bond_market_amount)")
+):
     """
-    クイック選択用の営業日を取得（最新、前日、5営業日前、1ヶ月前）
-    シングルクエリ+ソート方式でパフォーマンス最適化
+    クイック選択用の営業日を取得
     """
     try:
-        # 全ユニーク日付を一度取得（約30営業日分）
+        # 全ユニーク日付を取得
         result = await db_manager.get_bond_data({
-            'select': 'trade_date',
             'order': 'trade_date.desc',
-            'limit': 10000  # 約30営業日分をカバー (300レコード/日 × 30日)
-        })
+            'limit': 5000
+        }, table_name=table)
 
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["error"])
 
         if not result["data"]:
-            raise HTTPException(
-                status_code=404,
-                detail="No trading dates found in database"
-            )
+            return QuickDatesResponse()
 
-        # ユニークな日付リストを作成（降順ソート維持）
+        # ユニークな日付リストを作成
         unique_dates = list(dict.fromkeys([
             item['trade_date'] for item in result["data"]
         ]))

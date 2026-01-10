@@ -267,7 +267,12 @@ class BondAuctionWebCollector:
             if match:
                 result['average_price'] = self._parse_price(match.group(1))
         else:
-            pattern = r'[（\(]3[）\)]募入最低価格</span>.*?<span[^>]*>(\d+円[\d銭厘毛]+)</span>' if is_tb else r'\(3\)募入最低価格</span>.*?<span[^>]*>(\d+円\d+銭)</span>'
+            # 正規表現を緩和（カッコの種類や空白を許容）
+            if is_tb:
+                pattern = r'[（\(]3[）\)]\s*募入最低価格</span>.*?<span[^>]*>(\d+円[\d銭厘毛]+)</span>'
+            else:
+                pattern = r'[（\(]3[）\)]\s*募入最低価格</span>.*?<span[^>]*>(\d+円\d+銭)</span>'
+            
             match = re.search(pattern, html, re.DOTALL)
             if match:
                 result['lowest_price'] = self._parse_price(match.group(1))
@@ -328,13 +333,6 @@ class BondAuctionWebCollector:
             match = re.search(r'第Ⅱ非価格競争入札.*?<span[^>]*>([\d,]+億円)</span>', html, re.DOTALL)
             if match:
                 result['type2_noncompetitive'] = self._parse_amount(match.group(1), as_float=True)
-
-        # total_amount計算（NULL値は0として扱う）
-        result['total_amount'] = (
-            (result.get('allocated_amount') or 0) +
-            (result.get('type1_noncompetitive') or 0) +
-            (result.get('type2_noncompetitive') or 0)
-        )
 
         return result
 
@@ -497,6 +495,20 @@ class BondAuctionWebCollector:
                 'bond_code': bond_code,
                 'auction_date': schedule['date'],
                 'issue_number': schedule['issue_number'],
+                # 必須フィールドをNoneで初期化してキー欠落を防ぐ
+                'coupon_rate': None,
+                'issue_date': None,
+                'maturity_date': None,
+                'planned_amount': None,
+                'offered_amount': None,
+                'allocated_amount': None,
+                'lowest_price': None,
+                'highest_yield': None,
+                'average_price': None,
+                'average_yield': None,
+                'type1_noncompetitive': None,
+                'type2_noncompetitive': None,
+                'total_amount': None
             }
 
             is_tb = schedule.get('is_tb', False)
@@ -522,6 +534,14 @@ class BondAuctionWebCollector:
                     logger.info(f"URL {url} からデータ取得: {len([k for k, v in result.items() if v is not None])}件のフィールド")
 
             logger.info(f"統合結果: {len([k for k, v in combined_result.items() if v is not None])}件のフィールド")
+
+            # total_amount計算（全てのデータを統合後に計算）
+            # NULL値は0として扱う
+            combined_result['total_amount'] = (
+                (combined_result.get('allocated_amount') or 0) +
+                (combined_result.get('type1_noncompetitive') or 0) +
+                (combined_result.get('type2_noncompetitive') or 0)
+            )
 
             # データ完了チェック（TBは表面利率なし、それ以外は必須）
             if is_tb:

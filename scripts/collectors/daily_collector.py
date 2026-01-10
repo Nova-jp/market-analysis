@@ -7,7 +7,7 @@ import os
 import sys
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
@@ -16,6 +16,11 @@ sys.path.insert(0, str(project_root))
 
 from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
+from data.collectors.boj.holdings_collector import BOJHoldingsCollector
+from data.collectors.mof.bond_auction_web_collector import BondAuctionWebCollector
+
+# JST定義
+JST = timezone(timedelta(hours=9))
 
 # ログ設定（Cloud Run対応：ファイル出力なし、標準出力のみ）
 logging.basicConfig(
@@ -33,6 +38,8 @@ class DailyDataCollector:
     def __init__(self):
         self.processor = BondDataProcessor()
         self.db_manager = DatabaseManager()
+        self.boj_collector = BOJHoldingsCollector(delay_seconds=2.0)
+        self.mof_collector = BondAuctionWebCollector()
 
     def get_target_date(self):
         """
@@ -41,8 +48,8 @@ class DailyDataCollector:
         """
         import jpholiday
 
-        # 翌日から開始
-        target_date = datetime.now() + timedelta(days=1)
+        # 翌日から開始 (JST基準)
+        target_date = datetime.now(JST) + timedelta(days=1)
 
         # 最大10日先まで確認（無限ループ防止）
         for _ in range(10):
@@ -67,31 +74,150 @@ class DailyDataCollector:
         logger.warning(f"Could not find weekday within 10 days, using fallback: {fallback}")
         return fallback
 
+    def collect_boj_data(self):
+        """日銀保有データの差分収集"""
+        try:
+            logger.info("--- 日銀保有データ確認開始 ---")
+            
+            # DBの最新日付取得
+            query = "SELECT MAX(data_date) FROM boj_holdings"
+            rows = self.db_manager.execute_query(query)
+            latest_date_db = rows[0][0] if rows and rows[0][0] else None
+            
+            logger.info(f"DB最新日付: {latest_date_db}")
+
+            current_year = datetime.now(JST).year
+            years_to_check = [current_year]
+            
+            # 1月なら去年もチェック（年末データが遅れて出る可能性）
+            if datetime.now(JST).month == 1:
+                years_to_check.append(current_year - 1)
+            
+            total_new_files = 0
+            
+            for year in years_to_check:
+                file_links = self.boj_collector.get_file_links_for_year(year)
+                
+                # 新しいファイルのみ抽出
+                new_files = []
+                for link in file_links:
+                    file_date = link.get('date_str')
+                    if not file_date:
+                        continue
+                        
+                    # DB最新日付より新しいかチェック
+                    is_new = False
+                    if latest_date_db is None:
+                        is_new = True
+                    else:
+                        # 文字列比較で十分 (YYYY-MM-DD形式)
+                        if str(file_date) > str(latest_date_db):
+                            is_new = True
+                            
+                    if is_new:
+                        new_files.append(link)
+                
+                if new_files:
+                    logger.info(f"{year}年: {len(new_files)}件の新規ファイルを検出")
+                    for file_info in new_files:
+                        logger.info(f"新規取り込み: {file_info['date_str']} ({file_info['url']})")
+                        records = self.boj_collector.download_and_parse(file_info)
+                        if records:
+                            saved = self.boj_collector.save_to_database(records)
+                            logger.info(f"  -> {saved}件保存")
+                            total_new_files += 1
+                        time.sleep(2.0)
+                else:
+                    logger.info(f"{year}年: 新規ファイルなし")
+            
+            logger.info(f"--- 日銀保有データ確認完了 (新規: {total_new_files}ファイル) ---")
+            return True
+
+        except Exception as e:
+            logger.error(f"日銀データ収集中にエラー: {e}")
+            return False
+
+    def collect_mof_data(self):
+        """財務省入札データの収集 (当日分)"""
+        try:
+            logger.info("--- 財務省入札データ確認開始 ---")
+            # JSTで今日の日付を取得
+            today = datetime.now(JST).date()
+            
+            # 今日のカレンダーを確認
+            html = self.mof_collector.fetch_calendar_page(today.year, today.month)
+            if not html:
+                logger.warning("カレンダーページ取得失敗")
+                return False
+
+            # 今日の入札予定を確認
+            schedules = self.mof_collector.extract_auction_schedule(html, today)
+            
+            if not schedules:
+                logger.info("本日の入札予定なし")
+                return True
+                
+            logger.info(f"本日の入札予定: {[s['bond_name'] for s in schedules]}")
+            
+            # データ収集実行
+            results = self.mof_collector.collect_auction_data(today)
+            
+            if results:
+                # 日付型を文字列に変換 (JSON互換/DB保存用)
+                for r in results:
+                    if 'auction_date' in r and hasattr(r['auction_date'], 'isoformat'):
+                        r['auction_date'] = r['auction_date'].isoformat()
+                    if 'issue_date' in r and hasattr(r['issue_date'], 'isoformat'):
+                        r['issue_date'] = r['issue_date'].isoformat()
+                    if 'maturity_date' in r and hasattr(r['maturity_date'], 'isoformat'):
+                        r['maturity_date'] = r['maturity_date'].isoformat()
+                    # 不要なキー削除
+                    if 'source_url' in r: del r['source_url']
+
+                saved = self.db_manager.batch_insert_data(results, table_name='bond_auction')
+                logger.info(f"入札結果 {len(results)}件中 {saved}件を保存しました")
+            else:
+                logger.info("入札結果はまだ公開されていないか、取得できませんでした")
+            
+            logger.info("--- 財務省入札データ確認完了 ---")
+            return True
+
+        except Exception as e:
+            logger.error(f"財務省データ収集中にエラー: {e}")
+            return False
+
     def collect_daily_data(self):
         """日次データ収集のメイン処理"""
         try:
             logger.info("=== 日次データ収集開始 ===")
+            
+            overall_success = True
 
-            # 対象日付決定
+            # 1. JSDAデータ収集
             target_date_str = self.get_target_date()
-
-            # データ収集実行（simple_multi_day_collectorと同じロジック）
-            saved_count = self.collect_single_day_data(target_date_str)
-
-            if saved_count > 0:
-                logger.info(f"データ収集成功: {saved_count}件のレコードを保存")
-                logger.info("=== 日次データ収集完了 ===")
-                return True
-            elif saved_count == 0:
-                logger.info("データが空（休日の可能性）")
-                logger.info("=== 日次データ収集完了（データなし） ===")
-                return True
+            jsda_saved = self.collect_single_day_data(target_date_str)
+            
+            if jsda_saved < 0:
+                logger.error("JSDAデータ収集失敗")
+                overall_success = False
+            elif jsda_saved == 0:
+                logger.info("JSDAデータなし（休日の可能性）")
             else:
-                logger.error("データ収集に失敗しました")
-                return False
+                logger.info(f"JSDAデータ収集成功: {jsda_saved}件")
+
+            # 2. MOF入札データ収集 (独立して実行)
+            if not self.collect_mof_data():
+                logger.warning("MOFデータ収集でエラーが発生しましたが、処理を継続します")
+
+            # 3. BOJ保有データ収集 (独立して実行)
+            if not self.collect_boj_data():
+                logger.warning("BOJデータ収集でエラーが発生しましたが、処理を継続します")
+
+            logger.info(f"=== 日次データ収集完了 (JSDA成功: {overall_success}) ===")
+            return overall_success
 
         except Exception as e:
-            logger.error(f"日次データ収集中にエラー発生: {e}")
+            logger.error(f"日次データ収集中に致命的エラー発生: {e}")
             return False
 
     def _calculate_market_amount_for_record(self, bond_code: str, trade_date: str):

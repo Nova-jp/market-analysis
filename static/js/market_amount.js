@@ -16,16 +16,23 @@ const colors = [
 
 // 初期化
 document.addEventListener('DOMContentLoaded', function() {
-    initChart();
-    initDiffChart();
-    initBondDetailChart();
-    setupEventListeners();
-    loadQuickDates();
-    loadBondList();
+    console.log('Market Amount page initializing...');
+    try {
+        initChart();
+        initDiffChart();
+        initBondDetailChart();
+        setupEventListeners();
+        loadQuickDates();
+        loadBondList();
+        console.log('Initialization complete.');
+    } catch (e) {
+        console.error('Initialization failed:', e);
+    }
 });
 
 // グラフ初期化
 function initChart() {
+    console.log('Initializing main chart...');
     const ctx = document.getElementById('marketAmountChart').getContext('2d');
     marketAmountChart = new Chart(ctx, {
         type: 'line',
@@ -79,7 +86,7 @@ function initChart() {
                     callbacks: {
                         title: function(context) {
                             const year = context[0].parsed.x;
-                            return `残存年限: ${year}～${year+1}年`;
+                            return `残存年限: ${year}～${year+bucketSize}年`;
                         },
                         label: function(context) {
                             const date = context.dataset.label;
@@ -99,15 +106,21 @@ function initChart() {
 
 // イベントリスナー設定
 function setupEventListeners() {
+    console.log('Setting up event listeners...');
     const dateInput = document.getElementById('dateInput');
     const addDateBtn = document.getElementById('addDateBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
+
+    if (!dateInput || !addDateBtn) {
+        console.error('Required DOM elements not found!');
+        return;
+    }
 
     // 日付入力フィールドのキー入力制御
     dateInput.addEventListener('keydown', function(e) {
         const allowedKeys = [
             'Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight',
-            'ArrowUp', 'ArrowDown', 'Home', 'End'
+            'ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'
         ];
 
         const isCtrlCmd = e.ctrlKey || e.metaKey;
@@ -123,12 +136,16 @@ function setupEventListeners() {
     // Enterキーで日付追加
     dateInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
+            console.log('Enter key pressed in dateInput');
             addDateFromInput();
         }
     });
 
     // 追加ボタン
-    addDateBtn.addEventListener('click', addDateFromInput);
+    addDateBtn.addEventListener('click', function() {
+        console.log('Add button clicked');
+        addDateFromInput();
+    });
 
     // 全削除ボタン
     clearAllBtn.addEventListener('click', function() {
@@ -273,7 +290,7 @@ function updateDisplay() {
 // クイック日付読み込み
 async function loadQuickDates() {
     try {
-        const response = await fetch('/api/quick-dates');
+        const response = await fetch('/api/quick-dates?table=bond_market_amount');
         const dates = await response.json();
 
         const container = document.getElementById('quickButtons');

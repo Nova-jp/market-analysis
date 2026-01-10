@@ -20,6 +20,7 @@ from typing import Optional
 
 from app.services.scheduler_service import SchedulerService
 from app.services.irs_scheduler_service import IRSSchedulerService
+from app.services.asw_scheduler_service import ASWSchedulerService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ def get_calendar_collector():
 # スケジューラーサービスのインスタンス
 scheduler_service = SchedulerService()
 irs_scheduler_service = IRSSchedulerService()
+asw_scheduler_service = ASWSchedulerService()
 
 
 def verify_cloud_scheduler_request(
@@ -311,5 +313,44 @@ async def irs_daily_data_collection(
         raise
     except Exception as e:
         error_msg = f"Unexpected error in IRS collection: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@router.post("/api/scheduler/asw-daily-calculation")
+async def asw_daily_calculation(
+    request: Request,
+    x_cloudscheduler: Optional[str] = Header(None, alias="X-CloudScheduler"),
+    user_agent: Optional[str] = Header(None, alias="User-Agent")
+):
+    """
+    ASW計算実行エンドポイント
+    Cloud Schedulerから毎日21:30に呼び出される
+    """
+    if not verify_cloud_scheduler_request(request, x_cloudscheduler, user_agent):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is only accessible by Cloud Scheduler"
+        )
+
+    logger.info("=" * 60)
+    logger.info("ASW daily calculation triggered by Cloud Scheduler")
+    logger.info(f"Timestamp: {datetime.now().isoformat()}")
+    logger.info("=" * 60)
+
+    try:
+        result = await asw_scheduler_service.calculate_daily_asw()
+
+        if result["status"] in ["success", "skipped"]:
+            logger.info(f"ASW calculation task finished: {result.get('message')}")
+            return result
+        else:
+            logger.error(f"ASW calculation failed: {result.get('message')}")
+            raise HTTPException(status_code=500, detail=result.get("message"))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error in ASW calculation: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise HTTPException(status_code=500, detail=error_msg)

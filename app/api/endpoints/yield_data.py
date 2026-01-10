@@ -169,9 +169,50 @@ async def get_asw_data(
     date: str = Path(..., description="取得日付 (YYYY-MM-DD形式)")
 ):
     """指定日のASW (Asset Swap Spread) データ取得
-    国債利回り - スプライン補間スワップレート で算出
+    ASW_data テーブルから正確な計算結果を取得 (なければ簡易補間)
     """
     try:
+        # 1. Try to get accurate data from ASW_data
+        db_result = await db_manager.get_bond_spreads({'trade_date': f'eq.{date}'})
+        
+        if db_result["success"] and db_result["data"]:
+            asw_results: List[ASWData] = []
+            for row in db_result["data"]:
+                try:
+                    trade_dt = datetime.strptime(row['trade_date'], '%Y-%m-%d')
+                    if row.get('maturity_date'):
+                        due_dt = datetime.strptime(row['maturity_date'], '%Y-%m-%d')
+                    else:
+                        continue
+                        
+                    days = (due_dt - trade_dt).days
+                    years = days / 365.25
+                    
+                    # Use Act/365 SA (Semi-Annual) as standard for display
+                    asw_val = row.get('asw_act365_sa')
+                    bond_yield = float(row['yield_compound'])
+                    
+                    if asw_val is None:
+                        continue
+
+                    # Derive swap_rate: swap_rate = yield - asw
+                    swap_rate = bond_yield - float(asw_val)
+
+                    asw_results.append(ASWData(
+                        maturity=round(years, 3),
+                        bond_code=row['bond_code'],
+                        bond_name=row.get('bond_name', ''),
+                        bond_yield=bond_yield,
+                        swap_rate=round(swap_rate, 4),
+                        asw=float(asw_val)
+                    ))
+                except Exception:
+                    continue
+            
+            if asw_results:
+                return ASWCurveResponse(date=date, data=asw_results)
+
+        # Fallback to legacy on-the-fly calculation if DB has no data
         # 1. 国債データ取得
         bond_response = await get_yield_data(date)
         bond_data = bond_response.data

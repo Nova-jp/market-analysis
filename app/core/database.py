@@ -95,11 +95,16 @@ class DatabaseManager:
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
 
-    async def get_bond_data(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def get_bond_data(self, params: Dict[str, Any], table_name: str = "bond_data") -> Dict[str, Any]:
         """
         国債データを取得する専用メソッド
         APIエンドポイントからのリクエストパラメータを処理
         """
+        # 許可されたテーブルのみに制限
+        allowed_tables = ["bond_data", "bond_market_amount"]
+        if table_name not in allowed_tables:
+            table_name = "bond_data"
+
         try:
             limit = params.get("limit", 1000)
             conditions = []
@@ -128,6 +133,12 @@ class DatabaseManager:
                 conditions.append("trade_date <= :end_date")
                 query_params["end_date"] = self._parse_date(params["end_date"])
 
+            if "bond_code" in params:
+                val = params["bond_code"]
+                if val.startswith("eq."):
+                    conditions.append("bond_code = :bond_code")
+                    query_params["bond_code"] = val[3:]
+
             where_clause = ""
             if conditions:
                 where_clause = "WHERE " + " AND ".join(conditions)
@@ -141,7 +152,7 @@ class DatabaseManager:
                     order_clause = "ORDER BY trade_date ASC"
 
             sql = f"""
-                SELECT * FROM bond_data 
+                SELECT * FROM {table_name} 
                 {where_clause}
                 {order_clause}
                 LIMIT :limit
@@ -153,11 +164,9 @@ class DatabaseManager:
                 data = [dict(row._mapping) for row in result]
                 
                 if data:
-                    logger.info(f"Sample data keys: {list(data[0].keys())}")
+                    logger.debug(f"Query on {table_name} returned {len(data)} rows")
                     # 型変換
                     data = self._convert_types(data)
-                else:
-                    logger.warning("No data found matching criteria")
                 
                 return {"success": True, "data": data}
 
@@ -165,6 +174,126 @@ class DatabaseManager:
             logger.error(f"get_bond_data error: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
+
+    async def get_market_amount_data(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        市中残存額データを取得する専用メソッド
+        bond_market_amount と bond_data を JOIN して取得
+        """
+        try:
+            limit = params.get("limit", 1000)
+            conditions = []
+            query_params = {"limit": limit}
+            
+            # 取引日フィルタ
+            if "trade_date" in params:
+                val = params["trade_date"]
+                if val.startswith("eq."):
+                    conditions.append("m.trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val[3:])
+                elif val.startswith("gte."):
+                    conditions.append("m.trade_date >= :start_date")
+                    query_params["start_date"] = self._parse_date(val[4:])
+                elif val.startswith("lte."):
+                    conditions.append("m.trade_date <= :end_date")
+                    query_params["end_date"] = self._parse_date(val[4:])
+            
+            # 銘柄コードフィルタ
+            if "bond_code" in params:
+                val = params["bond_code"]
+                if val.startswith("eq."):
+                    conditions.append("m.bond_code = :bond_code")
+                    query_params["bond_code"] = val[3:]
+
+            where_clause = ""
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
+
+            order_clause = "ORDER BY m.trade_date DESC, m.bond_code ASC"
+            if "order" in params:
+                order_param = params["order"]
+                if "trade_date.desc" in order_param:
+                    order_clause = "ORDER BY m.trade_date DESC"
+                elif "trade_date.asc" in order_param:
+                    order_clause = "ORDER BY m.trade_date ASC"
+
+            sql = f"""
+                SELECT 
+                    m.trade_date, m.bond_code, m.market_amount,
+                    b.bond_name, b.due_date
+                FROM bond_market_amount m
+                LEFT JOIN bond_data b ON m.trade_date = b.trade_date AND m.bond_code = b.bond_code
+                {where_clause}
+                {order_clause}
+                LIMIT :limit
+            """
+            
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, query_params)
+                data = [dict(row._mapping) for row in result]
+                data = self._convert_types(data)
+                return {"success": True, "data": data}
+
+        except Exception as e:
+            logger.error(f"get_market_amount_data error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_bond_spreads(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        ASW (Asset Swap Spread) データを取得する専用メソッド
+        ASW_data と bond_data を JOIN して詳細情報を取得
+        """
+        try:
+            limit = params.get("limit", 1000)
+            conditions = []
+            query_params = {"limit": limit}
+            
+            if "trade_date" in params:
+                val = params["trade_date"]
+                if val.startswith("eq."):
+                    conditions.append("a.trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val[3:])
+                elif val.startswith("gte."):
+                    conditions.append("a.trade_date >= :start_date")
+                    query_params["start_date"] = self._parse_date(val[4:])
+                elif val.startswith("lte."):
+                    conditions.append("a.trade_date <= :end_date")
+                    query_params["end_date"] = self._parse_date(val[4:])
+                else:
+                    conditions.append("a.trade_date = :trade_date")
+                    query_params["trade_date"] = self._parse_date(val)
+
+            where_clause = ""
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
+
+            # JOIN with bond_data to get name, yield, maturity
+            sql = f"""
+                SELECT 
+                    a.trade_date, a.bond_code, 
+                    a.asw_act365_pa, a.asw_act365_sa,
+                    b.bond_name, b.due_date, b.ave_compound_yield as yield_compound
+                FROM "ASW_data" a
+                JOIN bond_data b ON a.trade_date = b.trade_date AND a.bond_code = b.bond_code
+                {where_clause}
+                ORDER BY b.due_date ASC
+                LIMIT :limit
+            """
+            
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, query_params)
+                data = [dict(row._mapping) for row in result]
+                
+                # 型変換
+                data = self._convert_types(data)
+                
+                return {"success": True, "data": data}
+
+        except Exception as e:
+            logger.error(f"get_bond_spreads error: {e}")
             return {"success": False, "error": str(e)}
 
     async def get_irs_data(self, params: Dict[str, Any]) -> Dict[str, Any]:
