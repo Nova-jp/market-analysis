@@ -26,7 +26,6 @@ logs/
 deployments/
 notebooks/
 scripts/
-analysis/
 frontend/
 webapp/
 legacy/
