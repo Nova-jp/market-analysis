@@ -65,58 +65,208 @@ async def search_dates(
 
 
 @router.get("/api/quick-dates", response_model=QuickDatesResponse)
+
+
 async def get_quick_dates(
+
+
     table: str = Query("bond_data", description="参照テーブル (bond_data or bond_market_amount)")
+
+
 ):
+
+
     """
+
+
     クイック選択用の営業日を取得
+
+
     """
+
+
     try:
-        # 全ユニーク日付を取得
-        result = await db_manager.get_bond_data({
+
+
+        # テーブル名検証
+
+
+        if table not in ["bond_data", "bond_market_amount"]:
+
+
+            table = "bond_data"
+
+
+
+
+
+        # ユニークな日付を取得（SQLAlchemy経由）
+
+
+        result = await db_manager.execute_query(table, {
+
+
             'order': 'trade_date.desc',
-            'limit': 5000
-        }, table_name=table)
+
+
+            'limit': 100  # 直近100日分あれば十分
+
+
+        })
+
+
+
+
 
         if not result["success"]:
+
+
+            # execute_queryが失敗した場合のフォールバック (bond_dataで再試行)
+
+
+            if table != "bond_data":
+
+
+                return await get_quick_dates(table="bond_data")
+
+
             raise HTTPException(status_code=500, detail=result["error"])
 
+
+
+
+
         if not result["data"]:
+
+
             return QuickDatesResponse()
 
-        # ユニークな日付リストを作成
-        unique_dates = list(dict.fromkeys([
-            item['trade_date'] for item in result["data"]
-        ]))
+
+
+
+
+        # ユニークな日付リストを作成 (辞書順序保持を利用)
+
+
+        # execute_queryの結果は既にソートされているが、念のため重複排除
+
+
+        # 結果データは [{'trade_date': 'YYYY-MM-DD', ...}, ...] の形式
+
+
+        unique_dates = []
+
+
+        seen = set()
+
+
+        for item in result["data"]:
+
+
+            d = item.get('trade_date')
+
+
+            if d and d not in seen:
+
+
+                unique_dates.append(str(d))
+
+
+                seen.add(d)
+
+
+
+
 
         quick_dates = {}
 
+
+
+
+
         # インデックスベースで営業日を取得
+
+
         if len(unique_dates) > 0:
+
+
             quick_dates['latest'] = unique_dates[0]
 
+
+
+
+
         if len(unique_dates) > 1:
+
+
             quick_dates['previous'] = unique_dates[1]
 
+
+
+
+
         if len(unique_dates) > 5:
+
+
             quick_dates['five_days_ago'] = unique_dates[5]
 
+
+
+
+
         # 1ヶ月前の営業日を計算
+
+
         if unique_dates:
+
+
             try:
+
+
                 latest_dt = datetime.strptime(unique_dates[0], '%Y-%m-%d')
+
+
                 month_ago_target = latest_dt - timedelta(days=30)
+
+
                 target_str = month_ago_target.strftime('%Y-%m-%d')
 
+
+
+
+
                 # 1ヶ月前に最も近い過去の営業日を検索
+
+
                 for date in unique_dates:
+
+
                     if date <= target_str:
+
+
                         quick_dates['month_ago'] = date
+
+
                         break
+
+
             except ValueError:
+
+
                 pass
+
+
+
+
 
         return QuickDatesResponse(**quick_dates)
 
+
+
+
+
     except Exception as e:
+
+
         raise HTTPException(status_code=500, detail=str(e))
+

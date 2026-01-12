@@ -10,8 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from app.core.config import settings
-from app.api.endpoints import health, dates, yield_data, scheduler, pca, market_amount
+from app.api.endpoints import health, dates, yield_data, scheduler, pca, market_amount, private_analytics
 from app.web.routes import router as web_router
+from app.api.deps import get_current_username
+from fastapi import Depends
 
 
 @asynccontextmanager
@@ -64,6 +66,7 @@ app.include_router(yield_data.router, tags=["yield_data"])
 app.include_router(scheduler.router, tags=["scheduler"])
 app.include_router(pca.router, prefix="/api/pca", tags=["pca"])
 app.include_router(market_amount.router, tags=["market_amount"])
+app.include_router(private_analytics.router, prefix="/api/private", tags=["private"])
 
 # Webページルーターの登録
 app.include_router(web_router, tags=["web"])
@@ -91,6 +94,12 @@ async def pca_analysis_page(request: Request):
 async def market_amount_page(request: Request):
     """市中残存額可視化画面"""
     return templates.TemplateResponse("market_amount.html", {"request": request})
+
+
+@app.get("/private", response_class=HTMLResponse)
+async def private_analysis_page(request: Request, username: str = Depends(get_current_username)):
+    """プライベート分析画面 (Forward Curve & PCA) - Basic Auth Required"""
+    return templates.TemplateResponse("private_analysis.html", {"request": request})
 
 
 @app.get("/debug", response_class=HTMLResponse)

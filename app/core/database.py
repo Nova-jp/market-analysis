@@ -60,7 +60,7 @@ class DatabaseManager:
         limit = params.get("limit", 100)
         offset = params.get("offset", 0)
         
-        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings", "irs_settlement_rates"]
+        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings", "irs_settlement_rates", "bond_market_amount"]
         if table not in allowed_tables:
             return {"success": False, "error": f"Invalid table name: {table}"}
 
@@ -348,6 +348,35 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"get_irs_data error: {e}")
             return {"success": False, "error": str(e)}
+
+    async def get_ois_data_range(self, start_date: date, end_date: date, product_type: str = 'OIS') -> List[Dict[str, Any]]:
+        """指定期間のOISデータを取得（テナーでソート）"""
+        try:
+            sql = """
+                SELECT trade_date, tenor, rate 
+                FROM irs_settlement_rates 
+                WHERE product_type = :product_type 
+                AND trade_date >= :start_date 
+                AND trade_date <= :end_date
+                ORDER BY trade_date ASC, 
+                         CASE 
+                            WHEN tenor LIKE '%M' THEN CAST(REPLACE(tenor, 'M', '') AS INTEGER) * 30
+                            WHEN tenor LIKE '%Y' THEN CAST(REPLACE(tenor, 'Y', '') AS INTEGER) * 365
+                            ELSE 99999
+                         END ASC
+            """
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, {
+                    "product_type": product_type,
+                    "start_date": start_date,
+                    "end_date": end_date
+                })
+                data = [dict(row._mapping) for row in result]
+                return self._convert_types(data)
+        except Exception as e:
+            logger.error(f"get_ois_data_range error: {e}")
+            return []
 
     async def health_check(self) -> Dict[str, Any]:
         """データベース接続のヘルスチェック"""

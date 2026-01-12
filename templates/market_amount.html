@@ -147,19 +147,6 @@
                             </small>
                         </div>
 
-                        <!-- クイック選択 -->
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">クイック選択:</label>
-                            <div id="quickButtons">
-                                <div class="text-center">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">読み込み中...</span>
-                                    </div>
-                                    <small class="d-block text-muted mt-1">日付を読み込み中...</small>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- 選択された日付 -->
                         <div class="mb-3">
                             <label class="form-label fw-bold">選択中の日付 (<span id="dateCount">0</span>/20):</label>
@@ -197,15 +184,11 @@
                             <small class="text-muted">9桁の銘柄コードを入力</small>
                         </div>
 
-                        <!-- 銘柄一覧（クイック選択） -->
+                        <!-- 選択された銘柄 -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold">クイック選択:</label>
-                            <div id="bondList" style="max-height: 300px; overflow-y: auto;">
-                                <div class="text-center">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">読み込み中...</span>
-                                    </div>
-                                </div>
+                            <label class="form-label fw-bold">選択中の銘柄:</label>
+                            <div id="selectedBondsContainer">
+                                <small class="text-muted">銘柄を選択してください</small>
                             </div>
                         </div>
                     </div>
@@ -255,12 +238,14 @@
                     </div>
                 </div>
 
+                <hr class="my-4 border-2">
+
                 <!-- 銘柄詳細グラフ -->
-                <div class="card mt-3" id="bondDetailCard" style="display: none;">
+                <div class="card mt-3" id="bondDetailCard">
                     <div class="card-header">
                         <h6 class="mb-0">
                             <i class="fas fa-chart-line me-2"></i>
-                            銘柄別時系列推移: <span id="bondDetailName">-</span>
+                            銘柄別時系列推移
                         </h6>
                     </div>
                     <div class="card-body">
@@ -271,6 +256,9 @@
                         <!-- 統計情報 -->
                         <div class="row mt-3" id="bondStats">
                             <!-- JavaScriptで動的生成 -->
+                            <div class="col-12 text-center text-muted">
+                                <small>銘柄を選択すると統計情報が表示されます</small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -281,6 +269,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <script src="/static/js/market_amount.js"></script>
+    <script src="/static/js/market_amount.js?v=2.2"></script>
 </body>
 </html>

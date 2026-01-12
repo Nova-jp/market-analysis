@@ -6,7 +6,8 @@ let bucketSize = 1.0;
 let maturityFilter = { min: null, max: null };
 const MAX_DATES = 20;
 let bondDetailChart = null;
-let currentBondCode = null;
+let selectedBonds = new Map(); // key: bondCode, value: bondData
+const MAX_BONDS = 10;
 const colors = [
     '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
     '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
@@ -22,8 +23,6 @@ document.addEventListener('DOMContentLoaded', function() {
         initDiffChart();
         initBondDetailChart();
         setupEventListeners();
-        loadQuickDates();
-        loadBondList();
         console.log('Initialization complete.');
     } catch (e) {
         console.error('Initialization failed:', e);
@@ -285,43 +284,6 @@ function updateDisplay() {
             <span class="remove-btn" onclick="removeDate('${date}')">&times;</span>
         </span>
     `).join('');
-}
-
-// クイック日付読み込み
-async function loadQuickDates() {
-    try {
-        const response = await fetch('/api/quick-dates?table=bond_market_amount');
-        const dates = await response.json();
-
-        const container = document.getElementById('quickButtons');
-        container.innerHTML = '';
-
-        const quickDates = [
-            { key: 'latest', label: '最新日', class: 'btn-primary' },
-            { key: 'previous', label: '前日', class: 'btn-secondary' },
-            { key: 'five_days_ago', label: '5日前', class: 'btn-secondary' },
-            { key: 'month_ago', label: '1ヶ月前', class: 'btn-secondary' }
-        ];
-
-        quickDates.forEach(item => {
-            if (dates[item.key]) {
-                const btn = document.createElement('button');
-                btn.className = `btn ${item.class} btn-sm quick-btn`;
-                btn.textContent = `${item.label} (${dates[item.key]})`;
-                btn.onclick = () => addDate(dates[item.key]);
-                container.appendChild(btn);
-            }
-        });
-
-        if (container.children.length === 0) {
-            container.innerHTML = '<small class="text-muted">クイック選択データを読み込めませんでした</small>';
-        }
-
-    } catch (error) {
-        console.error('クイック日付読み込みエラー:', error);
-        document.getElementById('quickButtons').innerHTML =
-            '<small class="text-danger">日付読み込みに失敗しました</small>';
-    }
 }
 
 // 市中残存額データ取得
@@ -680,8 +642,9 @@ function initBondDetailChart() {
                             return date.toISOString().split('T')[0];
                         },
                         label: function(context) {
+                            const label = context.dataset.label || '';
                             const amount = context.parsed.y.toLocaleString();
-                            return `市中残存額: ${amount}億円`;
+                            return `${label}: ${amount}億円`;
                         }
                     }
                 }
@@ -690,8 +653,19 @@ function initBondDetailChart() {
     });
 }
 
-// 銘柄詳細データ取得
+// 銘柄詳細データ取得（複数選択対応）
 async function loadBondDetail(bondCode) {
+    // 既に選択済みの場合はスキップ
+    if (selectedBonds.has(bondCode)) {
+        showMessage(`銘柄 ${bondCode} は既に選択されています`, 'info');
+        return;
+    }
+
+    if (selectedBonds.size >= MAX_BONDS) {
+        showMessage(`同時に表示できる銘柄は最大${MAX_BONDS}件です`, 'warning');
+        return;
+    }
+
     try {
         const response = await fetch(`/api/market-amount/bond/${bondCode}`);
 
@@ -701,20 +675,15 @@ async function loadBondDetail(bondCode) {
 
         const data = await response.json();
 
-        // チャート更新
-        updateBondDetailChart(data);
+        // データ追加
+        selectedBonds.set(bondCode, data);
 
-        // 統計情報表示
+        // 表示更新
+        updateBondListDisplay();
+        updateBondDetailChart();
         displayBondStatistics(data.statistics);
 
-        // 詳細カード表示
-        document.getElementById('bondDetailCard').style.display = 'block';
-        document.getElementById('bondDetailName').textContent =
-            `${data.bond_name} (${data.bond_code})`;
-
-        currentBondCode = bondCode;
-
-        showMessage(`${data.bond_name} のデータを取得しました`, 'success');
+        showMessage(`${data.bond_name} のデータを追加しました`, 'success');
 
     } catch (error) {
         console.error('銘柄詳細取得エラー:', error);
@@ -722,23 +691,74 @@ async function loadBondDetail(bondCode) {
     }
 }
 
-// チャート更新
-function updateBondDetailChart(data) {
-    const chartData = data.timeseries.map(point => ({
-        x: new Date(point.trade_date),
-        y: point.market_amount
-    }));
+// 選択中の銘柄一覧表示更新
+function updateBondListDisplay() {
+    const container = document.getElementById('selectedBondsContainer');
+    
+    if (selectedBonds.size === 0) {
+        container.innerHTML = '<small class="text-muted">銘柄を選択してください</small>';
+        return;
+    }
 
-    bondDetailChart.data.datasets = [{
-        label: '市中残存額',
-        data: chartData,
-        borderColor: '#007bff',
-        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-        fill: true,
-        tension: 0.1,
-        pointRadius: 2
-    }];
+    let html = '';
+    selectedBonds.forEach((data, code) => {
+        html += `
+            <span class="date-chip" style="background-color: #17a2b8;">
+                ${code}
+                <span class="remove-btn" onclick="removeBond('${code}')">&times;</span>
+            </span>
+        `;
+    });
+    container.innerHTML = html;
+}
 
+// 銘柄削除
+function removeBond(bondCode) {
+    if (selectedBonds.delete(bondCode)) {
+        updateBondListDisplay();
+        updateBondDetailChart();
+        
+        if (selectedBonds.size > 0) {
+            // 残っている銘柄のうち、最後のものの統計情報を表示
+            const lastData = Array.from(selectedBonds.values()).pop();
+            displayBondStatistics(lastData.statistics);
+        } else {
+            // 統計情報をクリア
+            document.getElementById('bondStats').innerHTML = `
+                <div class="col-12 text-center text-muted">
+                    <small>銘柄を選択すると統計情報が表示されます</small>
+                </div>
+            `;
+        }
+    }
+}
+
+// チャート更新（複数データセット対応）
+function updateBondDetailChart() {
+    const datasets = [];
+    let i = 0;
+
+    selectedBonds.forEach((data, code) => {
+        const chartData = data.timeseries.map(point => ({
+            x: new Date(point.trade_date),
+            y: point.market_amount
+        }));
+
+        const color = colors[i % colors.length];
+
+        datasets.push({
+            label: `${code} (${data.bond_name})`,
+            data: chartData,
+            borderColor: color,
+            backgroundColor: color + '20', // 透明度追加
+            fill: false, // 複数表示時は塗りつぶしなしの方が見やすい
+            tension: 0.1,
+            pointRadius: 2
+        });
+        i++;
+    });
+
+    bondDetailChart.data.datasets = datasets;
     bondDetailChart.update();
 }
 
@@ -780,35 +800,4 @@ function displayBondStatistics(stats) {
     `;
 
     document.getElementById('bondStats').innerHTML = statsHtml;
-}
-
-// 銘柄一覧取得
-async function loadBondList(limit = 30) {
-    try {
-        const response = await fetch(`/api/market-amount/bonds/search?limit=${limit}`);
-        const data = await response.json();
-
-        const listHtml = data.bonds.map(bond => `
-            <div class="bond-item p-2 border-bottom" style="cursor: pointer;"
-                 onclick="loadBondDetail('${bond.bond_code}')">
-                <div class="d-flex justify-content-between">
-                    <span class="text-truncate" style="max-width: 70%;">
-                        <strong>${bond.bond_code}</strong>
-                        <br>
-                        <small class="text-muted">${bond.bond_name}</small>
-                    </span>
-                    <span class="text-end">
-                        <small>${bond.latest_market_amount.toLocaleString()}<br>億円</small>
-                    </span>
-                </div>
-            </div>
-        `).join('');
-
-        document.getElementById('bondList').innerHTML = listHtml;
-
-    } catch (error) {
-        console.error('銘柄一覧取得エラー:', error);
-        document.getElementById('bondList').innerHTML =
-            '<small class="text-danger">銘柄一覧の取得に失敗しました</small>';
-    }
 }

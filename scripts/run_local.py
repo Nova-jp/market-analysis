@@ -17,6 +17,21 @@ os.environ.setdefault("ENVIRONMENT", "local")
 
 def main():
     """ローカル開発サーバーを起動"""
+    # 仮想環境の自動検出と切り替え
+    venv_python = project_root / "venv" / "bin" / "python"
+    if venv_python.exists():
+        # 現在のPythonがvenvのものでない場合、再実行
+        try:
+            # パスの正規化を行って比較
+            current_exe = Path(sys.executable).resolve()
+            target_exe = venv_python.resolve()
+            
+            if current_exe != target_exe:
+                print(f"🔄 Switching to virtual environment: {venv_python}")
+                os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+        except Exception as e:
+            print(f"⚠️  Failed to switch to virtual environment: {e}")
+
     print("🚀 Starting local development server...")
     print("📁 Project root:", project_root)
     print("🔗 Environment: local")
@@ -33,7 +48,7 @@ def main():
         uvicorn.run(
             "app.web.main:app",
             host="127.0.0.1",
-            port=8001,
+            port=8000,
             reload=True,
             reload_dirs=[str(project_root / "app")],
             log_level="info"

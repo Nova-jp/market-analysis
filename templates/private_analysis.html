@@ -1,0 +1,258 @@
+
+{% extends "base.html" %}
+
+{% block title %}プライベート分析 - Market Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2 class="mb-4">プライベート分析 (Swap Forward & PCA)</h2>
+
+    <!-- Section 1: Forward Curve Visualization -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">フォワードカーブ可視化</h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="fwdDate" class="form-label">基準日</label>
+                    <input type="date" id="fwdDate" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <button id="btnLoadFwd" class="btn btn-outline-primary w-100">表示</button>
+                </div>
+            </div>
+            <div id="fwdChart" style="height: 500px;"></div>
+        </div>
+    </div>
+
+    <!-- Section 2: PCA Analysis -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">主成分分析 (Forward Grid PCA)</h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="startDate" class="form-label">開始日</label>
+                    <input type="date" id="startDate" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label for="endDate" class="form-label">終了日</label>
+                    <input type="date" id="endDate" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label for="pcaComponents" class="form-label">主成分数</label>
+                    <input type="number" id="pcaComponents" class="form-control" value="3" min="1" max="5">
+                </div>
+                <div class="col-md-2">
+                    <button id="btnRunPCA" class="btn btn-outline-success w-100">分析実行</button>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- PCA Loadings Heatmaps -->
+            <div id="pcaResultsArea" style="display:none;">
+                <ul class="nav nav-tabs" id="pcaTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="comp-tab" data-bs-toggle="tab" data-bs-target="#comp-content" type="button">主成分ベクトル</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="error-tab" data-bs-toggle="tab" data-bs-target="#error-content" type="button">復元誤差ヒートマップ</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="scores-tab" data-bs-toggle="tab" data-bs-target="#scores-content" type="button">主成分スコア</button>
+                    </li>
+                </ul>
+                <div class="tab-content p-3 border border-top-0 bg-light" id="pcaTabContent">
+                    <!-- Loadings -->
+                    <div class="tab-pane fade show active" id="comp-content" role="tabpanel">
+                        <div class="row" id="loadingHeatmaps">
+                            <!-- JS dynamic content -->
+                        </div>
+                    </div>
+                    <!-- Residuals -->
+                    <div class="tab-pane fade" id="error-content" role="tabpanel">
+                        <div class="row mb-3 align-items-center">
+                            <div class="col-md-4">
+                                <label for="errorDateSelect" class="form-label">確認日選択</label>
+                                <select id="errorDateSelect" class="form-select"></select>
+                            </div>
+                        </div>
+                        <div id="residualHeatmap" style="height: 600px;"></div>
+                    </div>
+                    <!-- Scores -->
+                    <div class="tab-pane fade" id="scores-content" role="tabpanel">
+                        <div id="scoresChart" style="height: 500px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default dates
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('fwdDate').value = today;
+    document.getElementById('endDate').value = today;
+    
+    const lastMonth = new Date();
+    lastMonth.setDate(lastMonth.getDate() - 100);
+    document.getElementById('startDate').value = lastMonth.toISOString().split('T')[0];
+
+    // --- Forward Curve Logic ---
+    document.getElementById('btnLoadFwd').addEventListener('click', async () => {
+        const date = document.getElementById('fwdDate').value;
+        try {
+            const resp = await fetch(`/api/private/forward-curve?date=${date}`);
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || data.error || 'API Error');
+            if (data.error) throw new Error(data.error);
+            
+            const traces = [
+                {
+                    x: data.spot.x,
+                    y: data.spot.y,
+                    name: 'Spot Curve (Zero)',
+                    type: 'scatter',
+                    mode: 'lines+markers'
+                },
+                {
+                    x: data.forward_1y.x,
+                    y: data.forward_1y.y,
+                    name: '1Y Forward Curve (n-year ahead)',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    line: { dash: 'dash' }
+                }
+            ];
+            
+            Plotly.newPlot('fwdChart', traces, {
+                title: `${data.date} Swap Curve Analysis`,
+                xaxis: { title: 'Years' },
+                yaxis: { title: 'Rate (%)' },
+                hovermode: 'closest'
+            });
+        } catch (e) {
+            alert('Error loading forward curve: ' + e.message);
+        }
+    });
+
+    // --- PCA Logic ---
+    let pcaData = null;
+
+    document.getElementById('btnRunPCA').addEventListener('click', async () => {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        const comps = document.getElementById('pcaComponents').value;
+        
+        try {
+            document.getElementById('btnRunPCA').disabled = true;
+            document.getElementById('btnRunPCA').innerText = '分析中...';
+            
+            const resp = await fetch(`/api/private/pca?start_date=${start}&end_date=${end}&components=${comps}`);
+            pcaData = await resp.json();
+            if (!resp.ok) throw new Error(pcaData.detail || pcaData.error || 'API Error');
+            if (pcaData.error) throw new Error(pcaData.error);
+            
+            document.getElementById('pcaResultsArea').style.display = 'block';
+            renderPCALoadings();
+            populateErrorDates();
+            renderScores();
+            
+        } catch (e) {
+            alert('PCA Error: ' + e.message);
+        } finally {
+            document.getElementById('btnRunPCA').disabled = false;
+            document.getElementById('btnRunPCA').innerText = '分析実行';
+        }
+    });
+
+    function renderPCALoadings() {
+        const container = document.getElementById('loadingHeatmaps');
+        container.innerHTML = '';
+        
+        pcaData.components.forEach((comp, i) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 mb-4';
+            const divId = `pca-comp-${i}`;
+            col.innerHTML = `<div id="${divId}" style="height: 400px;"></div>`;
+            container.appendChild(col);
+            
+            const data = [{
+                z: comp.matrix,
+                x: pcaData.tenors,
+                y: pcaData.starts,
+                type: 'heatmap',
+                colorscale: 'RdBu',
+                reversescale: true,
+                zmid: 0
+            }];
+            
+            Plotly.newPlot(divId, data, {
+                title: `PC${comp.pc} Loading (Var: ${Math.round(comp.explained_variance*100)}%)`,
+                xaxis: { title: 'Tenor (Y)' },
+                yaxis: { title: 'Start (Y)' }
+            });
+        });
+    }
+
+    function populateErrorDates() {
+        const select = document.getElementById('errorDateSelect');
+        select.innerHTML = '';
+        pcaData.dates.slice().reverse().forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.innerText = d;
+            select.appendChild(opt);
+        });
+        
+        select.onchange = () => renderResiduals(select.value);
+        if (pcaData.dates.length > 0) {
+            select.value = pcaData.dates[pcaData.dates.length - 1];
+            renderResiduals(select.value);
+        }
+    }
+
+    function renderResiduals(date) {
+        const matrix = pcaData.residuals[date];
+        const data = [{
+            z: matrix,
+            x: pcaData.tenors,
+            y: pcaData.starts,
+            type: 'heatmap',
+            colorscale: 'Viridis'
+        }];
+        
+        Plotly.newPlot('residualHeatmap', data, {
+            title: `${date} PCA Reconstruction Residual (Real - Recon)`,
+            xaxis: { title: 'Tenor (Y)' },
+            yaxis: { title: 'Start (Y)' }
+        });
+    }
+
+    function renderScores() {
+        const traces = [];
+        for (let i = 0; i < pcaData.components.length; i++) {
+            traces.push({
+                x: pcaData.dates,
+                y: pcaData.scores.map(s => s[i]),
+                name: `PC${i+1}`,
+                type: 'scatter',
+                mode: 'lines'
+            });
+        }
+        
+        Plotly.newPlot('scoresChart', traces, {
+            title: 'Principal Component Scores Time Series',
+            xaxis: { title: 'Date' },
+            yaxis: { title: 'Score' }
+        });
+    }
+});
+</script>
+{% endblock %}
