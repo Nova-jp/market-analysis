@@ -86,8 +86,15 @@ export interface PCAResponse {
   parameters: {
     days: number;
     components: number;
+    actual_end_date?: string;
+    date_range?: {
+      start: string;
+      end: string;
+    };
   };
-  reconstruction?: { [date: string]: DailyReconstruction };
+  reconstruction_dates?: string[];
+  latest_reconstruction?: DailyReconstruction & { date: string };
+  reconstruction?: { [date: string]: DailyReconstruction }; // 互換性のため残す
 }
 
 // Market Amount Types
