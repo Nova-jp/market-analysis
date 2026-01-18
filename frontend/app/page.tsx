@@ -16,7 +16,6 @@ export default function Home() {
       href: '/pca',
       icon: <BarChart3 className="w-6 h-6" />,
       color: 'bg-indigo-500',
-      status: 'Coming Soon'
     },
     {
       title: 'Market Amount',
@@ -24,7 +23,6 @@ export default function Home() {
       href: '/market-amount',
       icon: <Database className="w-6 h-6" />,
       color: 'bg-emerald-500',
-      status: 'Coming Soon'
     },
     {
       title: 'Private Analytics',
@@ -47,10 +45,6 @@ export default function Home() {
           <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4 tracking-tight">
             Market Analytics <span className="text-blue-600 text-3xl align-top">v2.0</span>
           </h1>
-          <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-            最新のWeb技術を活用した、プロフェッショナルな債券市場分析プラットフォーム。
-            高速な計算と洗練されたインターフェースを提供します。
-          </p>
         </div>
       </div>
 

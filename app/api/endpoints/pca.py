@@ -35,10 +35,54 @@ async def analyze_pca(
             lookback_days=days,
             n_components=components
         )
+        
+        if "error" in result:
+             raise HTTPException(status_code=400, detail=result["error"])
+
+        # フロントエンド向けにデータ構造を変換
+        pca_model = result['pca_model']
+        pca_scores = result['principal_component_scores']
+        
+        # 1. componentsの整形
+        formatted_components = []
+        cum_variance = 0.0
+        for i in range(len(pca_model['explained_variance_ratio'])):
+            variance = pca_model['explained_variance_ratio'][i]
+            cum_variance += variance
+            formatted_components.append({
+                'pc_number': i + 1,
+                'eigenvalue': 0, # 計算省略
+                'explained_variance_ratio': variance,
+                'cumulative_variance_ratio': cum_variance,
+                'loadings': pca_model['components'][i]
+            })
+            
+        # 2. scoresの整形
+        formatted_scores = []
+        dates = pca_scores['dates']
+        scores_data = pca_scores['scores']
+        
+        for i, date_str in enumerate(dates):
+            score_entry = {'date': date_str}
+            for j, score in enumerate(scores_data[i]):
+                score_entry[f'pc{j+1}'] = score
+            formatted_scores.append(score_entry)
 
         logger.info("PCA分析完了")
-        return result
+        
+        return {
+            'components': formatted_components,
+            'scores': formatted_scores,
+            'maturities': result['common_grid'],
+            'mean_vector': pca_model['mean'],
+            'parameters': {
+                'days': days,
+                'components': components
+            }
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"PCA分析エラー: {str(e)}")
         raise HTTPException(status_code=500, detail=f"PCA分析エラー: {str(e)}")

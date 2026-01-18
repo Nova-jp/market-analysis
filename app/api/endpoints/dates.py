@@ -100,83 +100,17 @@ async def get_quick_dates(
 
 
 
-        # ユニークな日付を取得（SQLAlchemy経由）
-
-
-        result = await db_manager.execute_query(table, {
-
-
-            'order': 'trade_date.desc',
-
-
-            'limit': 100  # 直近100日分あれば十分
-
-
-        })
-
-
-
-
-
-        if not result["success"]:
-
-
-            # execute_queryが失敗した場合のフォールバック (bond_dataで再試行)
-
-
-            if table != "bond_data":
-
-
-                return await get_quick_dates(table="bond_data")
-
-
-            raise HTTPException(status_code=500, detail=result["error"])
-
-
-
-
-
-        if not result["data"]:
-
-
-            return QuickDatesResponse()
-
-
-
-
-
-        # ユニークな日付リストを作成 (辞書順序保持を利用)
-
-
-        # execute_queryの結果は既にソートされているが、念のため重複排除
-
-
-        # 結果データは [{'trade_date': 'YYYY-MM-DD', ...}, ...] の形式
-
-
-        unique_dates = []
-
-
-        seen = set()
-
-
-        for item in result["data"]:
-
-
-            d = item.get('trade_date')
-
-
-            if d and d not in seen:
-
-
-                unique_dates.append(str(d))
-
-
-                seen.add(d)
-
-
-
-
+        # ユニークな日付を効率的に取得するために直接SQLを実行
+        # bond_dataは1日あたり数百行あるため、単純なlimit=100では過去の日付に到達しない
+        sql = f"SELECT DISTINCT trade_date FROM {table} ORDER BY trade_date DESC LIMIT 30"
+        
+        # db_managerのsessionを使って実行
+        from sqlalchemy import text
+        from app.core.database import AsyncSessionLocal
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(text(sql))
+            unique_dates = [str(row[0]) for row in result]
 
         quick_dates = {}
 

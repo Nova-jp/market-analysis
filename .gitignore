@@ -149,3 +149,4 @@ requirements-*.txt
 !CLAUDE.md
 .vercel
 data_exports/
+!frontend/lib/
