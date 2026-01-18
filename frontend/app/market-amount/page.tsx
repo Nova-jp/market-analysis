@@ -211,10 +211,10 @@ export default function MarketAmountPage() {
 
         {/* Search Section */}
         <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200">
-          <label className="block text-slate-700 font-bold mb-2">Add Bond to Comparison</label>
+          <label className="block text-black font-black mb-2">Add Bond to Comparison</label>
           <div className="relative max-w-2xl">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
               <input
                 type="text"
                 placeholder="Search bonds (e.g., 00430045, 10年)"
@@ -224,7 +224,7 @@ export default function MarketAmountPage() {
                   setShowDropdown(true);
                 }}
                 onFocus={() => setShowDropdown(true)}
-                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-lg font-medium focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-300 rounded-xl text-lg font-black text-black focus:outline-none focus:border-blue-600 focus:bg-white transition-all placeholder:text-slate-400"
               />
               {isSearching && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -243,18 +243,18 @@ export default function MarketAmountPage() {
                     className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between border-b border-slate-50 last:border-none group"
                   >
                     <div>
-                      <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                      <div className="font-bold text-black group-hover:text-blue-600 transition-colors">
                         {bond.bond_name}
                       </div>
-                      <div className="text-xs text-slate-400 font-mono">
+                      <div className="text-xs text-slate-600 font-mono">
                         {bond.bond_code} | Due: {bond.due_date}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-bold text-slate-600">
+                      <div className="text-sm font-bold text-slate-900">
                         {bond.latest_market_amount.toLocaleString()} 億円
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-slate-600">
                         {bond.latest_trade_date}
                       </div>
                     </div>
@@ -282,7 +282,7 @@ export default function MarketAmountPage() {
                     >
                         <div className="flex flex-col">
                             <span className="text-sm font-black text-black leading-tight">{bond.bond_name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">{bond.bond_code}</span>
+                            <span className="text-[10px] text-slate-700 font-bold font-mono">{bond.bond_code}</span>
                         </div>
                         <button onClick={() => removeBond(bond.bond_code)} className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-colors">
                             <X className="w-4 h-4" />
