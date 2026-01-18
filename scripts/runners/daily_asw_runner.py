@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Daily ASW Calculation Runner
-Checks if bond_data and irs_raw are available for a given date and calculates ASW.
+Checks if bond_data and irs_data are available for a given date and calculates ASW.
 """
 import sys
 import os
