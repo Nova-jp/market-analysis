@@ -1,63 +1,36 @@
 """
 メインFastAPIアプリケーション
-統一されたWebアプリケーションエントリーポイント
+Next.jsフロントエンドと統合されたWebアプリケーション
 """
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app.core.config import settings
 from app.api.endpoints import health, dates, yield_data, scheduler, pca, market_amount, private_analytics
-from app.web.routes import router as web_router
 from app.api.deps import get_current_username
 from fastapi import Depends
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    アプリケーションのライフサイクル管理
-    起動時と終了時の処理を安全に実行
-    """
-    # === 起動時処理 ===
-    print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
-    print(f"📊 Environment: {settings.environment}")
-    print(f"🔗 Database Host: {settings.db_host}")
-
-    if settings.is_local:
-        print(f"🌐 Local server: http://{settings.host}:{settings.port}")
-
-    # yieldで制御を渡す（アプリケーション実行中）
+    """アプリケーションのライフサイクル管理"""
+    print(f"🚀 {settings.app_name} starting...")
     yield
-
-    # === 終了時処理 ===
     print(f"👋 {settings.app_name} shutting down...")
 
 
-# FastAPIアプリケーション初期化
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="国債金利分析システム - イールドカーブ比較・分析のための包括的ツール",
     lifespan=lifespan
 )
 
 # プロジェクトルート設定
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
-
-# テンプレート設定
-templates = Jinja2Templates(directory=os.path.join(project_root, "templates"))
-
-# 静的ファイル設定
-try:
-    app.mount("/static", StaticFiles(directory=os.path.join(project_root, "static")), name="static")
-except Exception:
-    # 静的ディレクトリが見つからない場合はスキップ
-    pass
 
 # APIルーターの登録
 app.include_router(health.router, tags=["health"])
@@ -68,41 +41,52 @@ app.include_router(pca.router, prefix="/api/pca", tags=["pca"])
 app.include_router(market_amount.router, tags=["market_amount"])
 app.include_router(private_analytics.router, prefix="/api/private", tags=["private"])
 
-# Webページルーターの登録
-app.include_router(web_router, tags=["web"])
+# 静的ファイルの配信設定 (Next.jsビルド成果物)
+# Dockerfileで /build/out が static/dist にコピーされている想定
+dist_path = os.path.join(project_root, "static", "dist")
 
+if os.path.exists(dist_path):
+    # Next.js の静的アセット (_next 等) を配信
+    app.mount("/_next", StaticFiles(directory=os.path.join(dist_path, "_next")), name="next-static")
+    app.mount("/static", StaticFiles(directory=dist_path), name="static")
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """ホーム画面 - 機能選択"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    # 各ルートに対するHTML配信
+    @app.get("/", response_class=FileResponse)
+    async def home():
+        return os.path.join(dist_path, "index.html")
 
+    @app.get("/yield-curve", response_class=FileResponse)
+    async def yield_curve_page():
+        # Next.js の出力形式に合わせて index.html または yield-curve.html を返す
+        path = os.path.join(dist_path, "yield-curve.html")
+        if not os.path.exists(path):
+            path = os.path.join(dist_path, "yield-curve/index.html")
+        return path
 
-@app.get("/yield-curve", response_class=HTMLResponse)
-async def yield_curve_page(request: Request):
-    """イールドカーブ比較画面"""
-    return templates.TemplateResponse("yield_curve.html", {"request": request})
+    @app.get("/pca", response_class=FileResponse)
+    async def pca_page():
+        path = os.path.join(dist_path, "pca.html")
+        if not os.path.exists(path):
+            path = os.path.join(dist_path, "pca/index.html")
+        return path
+        
+    @app.get("/market-amount", response_class=FileResponse)
+    async def market_amount_page():
+        path = os.path.join(dist_path, "market-amount.html")
+        if not os.path.exists(path):
+            path = os.path.join(dist_path, "market-amount/index.html")
+        return path
 
-
-@app.get("/pca", response_class=HTMLResponse)
-async def pca_analysis_page(request: Request):
-    """PCA分析画面"""
-    return templates.TemplateResponse("pca.html", {"request": request})
-
-
-@app.get("/market-amount", response_class=HTMLResponse)
-async def market_amount_page(request: Request):
-    """市中残存額可視化画面"""
-    return templates.TemplateResponse("market_amount.html", {"request": request})
-
-
-@app.get("/private", response_class=HTMLResponse)
-async def private_analysis_page(request: Request, username: str = Depends(get_current_username)):
-    """プライベート分析画面 (Forward Curve & PCA) - Basic Auth Required"""
-    return templates.TemplateResponse("private_analysis.html", {"request": request})
-
-
-@app.get("/debug", response_class=HTMLResponse)
-async def debug_page(request: Request):
-    """API Debug Test Page"""
-    return templates.TemplateResponse("debug.html", {"request": request})
+    # その他の静的ファイルへのフォールバック（faviconなど）
+    @app.get("/{path:path}")
+    async def static_proxy(path: str):
+        file_path = os.path.join(dist_path, path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # 見つからない場合は index.html を返す (SPA的な挙動)
+        return os.path.join(dist_path, "index.html")
+else:
+    # 開発環境等でビルド済みファイルがない場合
+    @app.get("/")
+    async def root():
+        return {"message": "Frontend build not found. Please run 'npm run build' in frontend directory."}
