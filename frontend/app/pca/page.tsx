@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { fetcher, PCAResponse } from '@/lib/api';
 import LoadingsChart from '@/components/pca/LoadingsChart';
 import ScoreChart from '@/components/pca/ScoreChart';
+import ReconstructionChart from '@/components/pca/ReconstructionChart';
 import { 
   BarChart3, 
   Settings2, 
@@ -15,22 +15,40 @@ import {
   ArrowLeft,
   Activity,
   Layers,
-  CalendarDays
+  CalendarDays,
+  ScatterChart as ScatterIcon,
+  Calendar
 } from 'lucide-react';
 
 export default function PCAPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PCAResponse | null>(null);
+  
+  // Parameters
   const [days, setDays] = useState(100);
   const [components, setComponents] = useState(3);
+  const [analysisDate, setAnalysisDate] = useState<string>(''); // 基準日（空文字＝最新）
+
+  // UI State
+  const [recDateIndex, setRecDateIndex] = useState(0); // 復元誤差表示用の日付インデックス
   const [error, setError] = useState<string | null>(null);
 
   const runAnalysis = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetcher(`/api/pca/analyze?days=${days}&components=${components}`);
+      const queryParams = new URLSearchParams({
+        days: days.toString(),
+        components: components.toString(),
+      });
+      if (analysisDate) {
+        queryParams.append('end_date', analysisDate);
+      }
+
+      const data = await fetcher(`/api/pca/analyze?${queryParams.toString()}`);
       setResult(data);
+      // 結果が返ってきたら、復元誤差の日付インデックスを最新（0）にリセット
+      setRecDateIndex(0);
     } catch (err) {
       console.error('PCA Analysis failed:', err);
       setError('分析の実行に失敗しました。データ不足かサーバーエラーの可能性があります。');
@@ -38,6 +56,11 @@ export default function PCAPage() {
       setLoading(false);
     }
   };
+
+  // 復元誤差用の日付リストと選択中の日付データ
+  const recDates = result?.reconstruction ? Object.keys(result.reconstruction).sort().reverse() : [];
+  const selectedRecDate = recDates[recDateIndex];
+  const selectedRecData = result?.reconstruction?.[selectedRecDate];
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -70,7 +93,22 @@ export default function PCAPage() {
             <h2>Analysis Parameters</h2>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 items-end">
+            {/* Analysis Date (Reference Date) */}
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                Reference Date
+              </label>
+              <input 
+                type="date" 
+                value={analysisDate}
+                onChange={(e) => setAnalysisDate(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+              />
+              <p className="text-xs text-slate-400 font-medium">指定しない場合は最新日を使用</p>
+            </div>
+
             {/* Lookback Period */}
             <div className="space-y-4">
               <div className="flex justify-between items-center">
@@ -209,9 +247,70 @@ export default function PCAPage() {
                 <div className="mt-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
                   <p className="text-xs text-slate-500 font-medium leading-relaxed">
                     <strong>PC Scores (時系列推移):</strong> 過去{result.parameters.days}営業日における各要因の強さの推移です。<br/>
-                    スコアがプラスの時はその要因が金利を押し上げる方向に働き、マイナスの時は押し下げる方向に働いています。市場イベント時のカーブ形状の変化を追跡できます。
+                    スコアがプラスの時はその要因が金利を押し上げる方向に働き、マイナスの時は押し下げる方向に働いています。
                   </p>
                 </div>
+              </div>
+
+              {/* Reconstruction Error Analysis */}
+              <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-xl border border-slate-200">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                   <h3 className="font-bold text-xl text-slate-800 flex items-center gap-2">
+                    <ScatterIcon className="w-6 h-6 text-indigo-500" />
+                    Reconstruction Error Analysis
+                  </h3>
+                  
+                  {/* Date Selector for Reconstruction */}
+                  {recDates.length > 0 && (
+                    <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+                      <div className="text-sm font-bold text-slate-600 whitespace-nowrap">
+                        Target Date: <span className="text-indigo-600 font-black ml-1">{selectedRecDate}</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max={recDates.length - 1} 
+                        step="1" 
+                        value={recDateIndex}
+                        onChange={(e) => setRecDateIndex(Number(e.target.value))}
+                        className="w-32 md:w-48 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        dir="ltr" 
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {selectedRecData ? (
+                  <>
+                    <ReconstructionChart data={selectedRecData.data} />
+                    <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase">Mean Abs Error</p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.mae * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase">RMSE</p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.rmse * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                      </div>
+                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase">Max Error</p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.max_error * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                      </div>
+                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase">Bond Count</p>
+                        <p className="text-lg font-black text-slate-700">{selectedRecData.data.length} <span className="text-xs font-normal text-slate-400">issues</span></p>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-xs text-slate-400 text-center">
+                      * 誤差(Error) = 実測利回り(Actual) - PCA復元利回り(Reconstructed). 
+                      色が赤いほど残存期間が長く、青いほど短いことを示します。
+                    </p>
+                  </>
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-slate-400">
+                    Data not available
+                  </div>
+                )}
               </div>
             </div>
           </div>

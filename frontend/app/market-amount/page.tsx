@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   fetcher, 
@@ -16,19 +16,27 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  AreaChart,
-  Area
+  Legend
 } from 'recharts';
 import { 
   Loader2, 
   Search, 
-  TrendingUp, 
   ArrowLeft, 
   BarChart3, 
-  Calendar,
-  DollarSign,
-  Info
+  X,
+  RefreshCw,
+  Plus
 } from 'lucide-react';
+
+// Color palette for multiple lines
+const COLORS = [
+  '#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', 
+  '#db2777', '#0891b2', '#4f46e5', '#ea580c', '#1e293b'
+];
+
+interface SelectedBondData extends BondTimeseriesResponse {
+  color: string;
+}
 
 export default function MarketAmountPage() {
   // Search State
@@ -38,14 +46,13 @@ export default function MarketAmountPage() {
   const [showDropdown, setShowDropdown] = useState(false);
   
   // Data State
-  const [selectedBond, setSelectedBond] = useState<BondTimeseriesResponse | null>(null);
+  const [selectedBonds, setSelectedBonds] = useState<SelectedBondData[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Debounce search
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-      // Always fetch initial list if empty or if searching
       fetchSearchResults(searchTerm);
     }, 300);
 
@@ -55,14 +62,6 @@ export default function MarketAmountPage() {
   const fetchSearchResults = async (query: string) => {
     setIsSearching(true);
     try {
-      // Note: The backend search currently returns a list. 
-      // Ideally pass query to backend, but currently backend might just return recent ones or accepts bond_type?
-      // Looking at the API code, it doesn't take a text query, only limit.
-      // So we fetch all (limit 100) and filter client side if needed, or just show the list.
-      // Wait, the API is `search_bonds(bond_type, limit)`. It doesn't seem to support text search yet.
-      // So we will just fetch the list and filter client side if the list is small enough, 
-      // or just show the available bonds sorted by update.
-      
       const res: BondSearchResponse = await fetcher('/api/market-amount/bonds/search?limit=100');
       let filtered = res.bonds;
       if (query) {
@@ -81,20 +80,99 @@ export default function MarketAmountPage() {
   };
 
   const handleSelectBond = async (bond: BondSearchItem) => {
-    setSearchTerm(`${bond.bond_code} - ${bond.bond_name}`);
+    // Prevent duplicates
+    if (selectedBonds.some(b => b.bond_code === bond.bond_code)) {
+      setSearchTerm('');
+      setShowDropdown(false);
+      return;
+    }
+    
+    if (selectedBonds.length >= 10) {
+      setError('一度に表示できるのは最大10銘柄までです。');
+      return;
+    }
+
+    setSearchTerm('');
     setShowDropdown(false);
     setLoadingData(true);
     setError(null);
+
     try {
       const data: BondTimeseriesResponse = await fetcher(`/api/market-amount/bond/${bond.bond_code}`);
-      setSelectedBond(data);
+      const newColor = COLORS[selectedBonds.length % COLORS.length];
+      
+      setSelectedBonds(prev => [...prev, { ...data, color: newColor }]);
     } catch (err) {
       console.error('Fetch bond data failed', err);
       setError('データの取得に失敗しました。');
-      setSelectedBond(null);
     } finally {
       setLoadingData(false);
     }
+  };
+
+  const removeBond = (bondCode: string) => {
+    setSelectedBonds(prev => {
+      const filtered = prev.filter(b => b.bond_code !== bondCode);
+      // Re-assign colors to maintain order if desired, or just keep them.
+      // Keeping them simple for now.
+      return filtered.map((b, idx) => ({
+        ...b,
+        color: COLORS[idx % COLORS.length]
+      }));
+    });
+  };
+
+  const clearAll = () => {
+    setSelectedBonds([]);
+    setError(null);
+  };
+
+  // Merge data for the chart
+  const chartData = useMemo(() => {
+    const dataMap = new Map<string, any>();
+    
+    selectedBonds.forEach(bond => {
+      bond.timeseries.forEach(point => {
+        if (!dataMap.has(point.trade_date)) {
+          dataMap.set(point.trade_date, { date: point.trade_date });
+        }
+        const entry = dataMap.get(point.trade_date);
+        entry[bond.bond_code] = point.market_amount;
+        entry[`${bond.bond_code}_name`] = bond.bond_name;
+      });
+    });
+
+    return Array.from(dataMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [selectedBonds]);
+
+  // Custom Tooltip
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white/95 backdrop-blur-sm p-4 border border-slate-200 rounded-xl shadow-xl text-sm min-w-[200px]">
+          <p className="font-bold text-slate-700 mb-2 border-b border-slate-100 pb-1">
+            Date: {label}
+          </p>
+          <div className="space-y-2">
+            {payload.map((entry: any, index: number) => {
+              const bondCode = entry.dataKey;
+              // Find the bond name from selectedBonds or payload
+              const bondName = selectedBonds.find(b => b.bond_code === bondCode)?.bond_name || bondCode;
+              
+              return (
+                <div key={index} className="flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between gap-4 font-bold" style={{ color: entry.color }}>
+                    <span>{bondName}</span>
+                    <span>{entry.value?.toLocaleString()} 億円</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -116,14 +194,24 @@ export default function MarketAmountPage() {
               Market Amount Analysis
             </h1>
             <p className="text-slate-800 font-medium text-lg mt-2">
-              個別の銘柄ごとの市中残存額(Market Amount)の推移を追跡します。
+              複数の銘柄の市中残存額(Market Amount)を比較・分析します。
             </p>
           </div>
+          
+          {selectedBonds.length > 0 && (
+            <button 
+              onClick={clearAll}
+              className="flex items-center gap-1.5 px-4 py-2 bg-white text-slate-700 font-bold border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-xl transition-all shadow-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reset All
+            </button>
+          )}
         </div>
 
         {/* Search Section */}
         <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200">
-          <label className="block text-slate-700 font-bold mb-2">Select Bond (Code or Name)</label>
+          <label className="block text-slate-700 font-bold mb-2">Add Bond to Comparison</label>
           <div className="relative max-w-2xl">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -175,7 +263,7 @@ export default function MarketAmountPage() {
               </div>
             )}
             
-            {showDropdown && searchResults.length === 0 && !isSearching && (
+            {showDropdown && searchResults.length === 0 && !isSearching && searchTerm && (
                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 p-4 text-center text-slate-500 z-50">
                  No bonds found.
                </div>
@@ -183,115 +271,90 @@ export default function MarketAmountPage() {
           </div>
         </div>
 
+        {/* Active Chips */}
+        {selectedBonds.length > 0 && (
+            <div className="flex flex-wrap gap-3 animate-in fade-in slide-in-from-top-4 duration-500">
+                {selectedBonds.map((bond) => (
+                    <div 
+                        key={bond.bond_code} 
+                        className="flex items-center gap-3 pl-4 pr-3 py-2 bg-white border-2 rounded-xl shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
+                        style={{ borderColor: bond.color }}
+                    >
+                        <div className="flex flex-col">
+                            <span className="text-sm font-black text-black leading-tight">{bond.bond_name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{bond.bond_code}</span>
+                        </div>
+                        <button onClick={() => removeBond(bond.bond_code)} className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-colors">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        )}
+
         {/* Content Area */}
-        {loadingData ? (
+        {loadingData && selectedBonds.length === 0 ? (
           <div className="h-[400px] flex flex-col items-center justify-center gap-4 bg-white rounded-3xl border border-slate-200">
             <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
             <p className="text-xl font-bold text-slate-600">Loading Bond Data...</p>
           </div>
-        ) : error ? (
+        ) : error && selectedBonds.length === 0 ? (
            <div className="p-8 bg-red-50 text-red-600 font-bold rounded-2xl border border-red-100 text-center">
              {error}
            </div>
-        ) : selectedBond ? (
-          <div className="space-y-6">
-            
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                 <div className="flex items-center gap-2 text-slate-500 text-sm font-bold mb-1">
-                   <Calendar className="w-4 h-4" /> Latest Date
-                 </div>
-                 <div className="text-2xl font-black text-slate-800">
-                   {selectedBond.statistics.latest_date}
-                 </div>
-               </div>
-               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                 <div className="flex items-center gap-2 text-slate-500 text-sm font-bold mb-1">
-                   <DollarSign className="w-4 h-4" /> Latest Amount
-                 </div>
-                 <div className="text-2xl font-black text-blue-600">
-                   {selectedBond.statistics.latest_amount.toLocaleString()} <span className="text-sm text-slate-400 font-medium">億円</span>
-                 </div>
-               </div>
-               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                 <div className="flex items-center gap-2 text-slate-500 text-sm font-bold mb-1">
-                   <TrendingUp className="w-4 h-4" /> Average
-                 </div>
-                 <div className="text-2xl font-black text-slate-800">
-                   {selectedBond.statistics.avg_amount.toLocaleString()} <span className="text-sm text-slate-400 font-medium">億円</span>
-                 </div>
-               </div>
-               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                 <div className="flex items-center gap-2 text-slate-500 text-sm font-bold mb-1">
-                   <Info className="w-4 h-4" /> Data Points
-                 </div>
-                 <div className="text-2xl font-black text-slate-800">
-                   {selectedBond.statistics.data_points}
-                 </div>
-               </div>
-            </div>
-
-            {/* Chart */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-lg">
-               <div className="mb-6">
-                 <h2 className="text-2xl font-bold text-slate-800">
-                   {selectedBond.bond_name}
-                 </h2>
-                 <p className="text-slate-500 font-mono text-sm">
-                   Code: {selectedBond.bond_code} | Maturity: {selectedBond.due_date}
-                 </p>
-               </div>
-               
-               <div className="h-[500px] w-full">
-                 <ResponsiveContainer width="100%" height="100%">
-                   <AreaChart
-                     data={selectedBond.timeseries}
-                     margin={{ top: 10, right: 30, left: 20, bottom: 0 }}
-                   >
-                     <defs>
-                       <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                         <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                         <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                       </linearGradient>
-                     </defs>
-                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                     <XAxis 
-                       dataKey="trade_date" 
-                       tick={{ fontSize: 12 }}
-                       stroke="#64748b"
-                       minTickGap={30}
+        ) : selectedBonds.length > 0 ? (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-lg relative min-h-[500px]">
+             {loadingData && (
+                <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-3xl">
+                  <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+                </div>
+             )}
+             
+             <div className="h-[500px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+                 <LineChart
+                   data={chartData}
+                   margin={{ top: 10, right: 30, left: 20, bottom: 0 }}
+                 >
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                   <XAxis 
+                     dataKey="date" 
+                     tick={{ fontSize: 12 }}
+                     stroke="#64748b"
+                     minTickGap={30}
+                   />
+                   <YAxis 
+                     domain={['auto', 'auto']}
+                     tickFormatter={(value) => (value / 10000).toFixed(1) + '兆'}
+                     tick={{ fontSize: 12 }}
+                     stroke="#64748b"
+                   />
+                   <Tooltip content={<CustomTooltip />} />
+                   <Legend verticalAlign="top" height={36}/>
+                   
+                   {selectedBonds.map((bond) => (
+                     <Line
+                       key={bond.bond_code}
+                       type="monotone"
+                       dataKey={bond.bond_code}
+                       name={bond.bond_name}
+                       stroke={bond.color}
+                       strokeWidth={2}
+                       dot={false}
+                       activeDot={{ r: 6 }}
+                       connectNulls
+                       animationDuration={500}
                      />
-                     <YAxis 
-                       domain={['auto', 'auto']}
-                       tickFormatter={(value) => (value / 10000).toFixed(1) + '兆'}
-                       tick={{ fontSize: 12 }}
-                       stroke="#64748b"
-                     />
-                     <Tooltip 
-                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                       formatter={(value: any) => [value?.toLocaleString() + ' 億円', 'Market Amount']}
-                     />
-                     <Area 
-                       type="monotone" 
-                       dataKey="market_amount" 
-                       stroke="#2563eb" 
-                       strokeWidth={3}
-                       fillOpacity={1} 
-                       fill="url(#colorAmount)" 
-                       animationDuration={1000}
-                     />
-                   </AreaChart>
-                 </ResponsiveContainer>
-               </div>
-            </div>
-
+                   ))}
+                 </LineChart>
+               </ResponsiveContainer>
+             </div>
           </div>
         ) : (
           <div className="h-[500px] flex flex-col items-center justify-center text-slate-400 border-4 border-dashed border-slate-100 rounded-3xl bg-slate-50/50">
              <BarChart3 className="w-20 h-20 mb-6 text-slate-200" />
-             <p className="text-2xl font-black text-slate-400">No Bond Selected</p>
-             <p className="text-slate-400 mt-2 font-medium">Search and select a bond above to view its history.</p>
+             <p className="text-2xl font-black text-slate-400">No Bonds Selected</p>
+             <p className="text-slate-400 mt-2 font-medium">Search and select bonds above to compare their history.</p>
           </div>
         )}
       </div>
