@@ -22,13 +22,17 @@ import {
 
 export default function PCAPage() {
   const [loading, setLoading] = useState(false);
+  const [recLoading, setRecLoading] = useState(false);
   const [result, setResult] = useState<PCAResponse | null>(null);
+  
+  // オンデマンドで取得した復元誤差データを保持するキャッシュ (日付 -> データ)
+  const [recCache, setRecCache] = useState<{ [date: string]: DailyReconstruction }>({});
   
   // Parameters
   const [days, setDays] = useState(100);
   const [components, setComponents] = useState(3);
   const [analysisDate, setAnalysisDate] = useState<string>(''); // 基準日（空文字＝最新）
-
+  
   // UI State
   const [recDateIndex, setRecDateIndex] = useState(0); // 復元誤差表示用の日付インデックス
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +40,7 @@ export default function PCAPage() {
   const runAnalysis = async () => {
     setLoading(true);
     setError(null);
+    setRecCache({}); // キャッシュクリア
     try {
       const queryParams = new URLSearchParams({
         days: days.toString(),
@@ -47,23 +52,57 @@ export default function PCAPage() {
 
       const data = await fetcher(`/api/pca/analyze?${queryParams.toString()}`);
       setResult(data);
-      // 結果が返ってきたら、復元誤差の日付インデックスを最新（0）にリセット
       setRecDateIndex(0);
-    } catch (err) {
+      
+      // 初期レスポンスに含まれる最新日のデータをキャッシュにセット
+      if (data.latest_reconstruction) {
+        setRecCache({ [data.latest_reconstruction.date]: data.latest_reconstruction });
+      }
+    } catch (err: any) {
       console.error('PCA Analysis failed:', err);
-      setError('分析の実行に失敗しました。データ不足かサーバーエラーの可能性があります。');
+      const detail = err.detail || (err instanceof Error ? err.message : null);
+      setError(detail ? `分析エラー: ${detail}` : '分析の実行に失敗しました。');
     } finally {
       setLoading(false);
     }
   };
 
-  // 復元誤差用の日付リストと選択中の日付データ
-  const recDates = result?.reconstruction ? Object.keys(result.reconstruction).sort().reverse() : [];
-  const selectedRecDate = recDates[recDateIndex];
-  const selectedRecData = result?.reconstruction?.[selectedRecDate];
+  // 特定の日付の復元データを取得する
+  const fetchReconstruction = async (targetDate: string) => {
+    if (!result || recCache[targetDate] || recLoading) return;
 
-  return (
-    <div className="min-h-screen bg-slate-100">
+    setRecLoading(true);
+    try {
+      const queryParams = new URLSearchParams({
+        date: targetDate,
+        end_date: result.parameters.actual_end_date || analysisDate,
+        days: days.toString(),
+        components: components.toString()
+      });
+      const data = await fetcher(`/api/pca/reconstruction?${queryParams.toString()}`);
+      setRecCache(prev => ({ ...prev, [targetDate]: data }));
+    } catch (err) {
+      console.error('Failed to fetch reconstruction:', err);
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  // 復元誤差用の日付リスト
+  const recDates = result?.reconstruction_dates || [];
+  const selectedRecDate = recDates[recDateIndex];
+  const selectedRecData = selectedRecDate ? recCache[selectedRecDate] : null;
+
+  // スライダー変更時のハンドラー
+  const handleRecDateChange = (index: number) => {
+    setRecDateIndex(index);
+    const targetDate = recDates[index];
+    if (targetDate && !recCache[targetDate]) {
+      fetchReconstruction(targetDate);
+    }
+  };
+
+  return (    <div className="min-h-screen bg-slate-100">
       <div className="container mx-auto p-4 md:p-8 space-y-8">
         
         {/* Title Header */}
@@ -263,8 +302,10 @@ export default function PCAPage() {
                   {/* Date Selector for Reconstruction */}
                   {recDates.length > 0 && (
                     <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-                      <div className="text-sm font-bold text-slate-600 whitespace-nowrap">
-                        Target Date: <span className="text-indigo-600 font-black ml-1">{selectedRecDate}</span>
+                      <div className="text-sm font-bold text-slate-600 whitespace-nowrap flex items-center gap-2">
+                        Target Date: 
+                        <span className="text-indigo-600 font-black ml-1">{selectedRecDate}</span>
+                        {recLoading && <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />}
                       </div>
                       <input 
                         type="range" 
@@ -272,7 +313,7 @@ export default function PCAPage() {
                         max={recDates.length - 1} 
                         step="1" 
                         value={recDateIndex}
-                        onChange={(e) => setRecDateIndex(Number(e.target.value))}
+                        onChange={(e) => handleRecDateChange(Number(e.target.value))}
                         className="w-32 md:w-48 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                         dir="ltr" 
                       />
@@ -281,20 +322,20 @@ export default function PCAPage() {
                 </div>
 
                 {selectedRecData ? (
-                  <>
+                  <div className={recLoading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
                     <ReconstructionChart data={selectedRecData.data} />
                     <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
                         <p className="text-xs text-slate-400 font-bold uppercase">Mean Abs Error</p>
-                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.mae * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.mae * 100).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
                       </div>
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
                         <p className="text-xs text-slate-400 font-bold uppercase">RMSE</p>
-                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.rmse * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.rmse * 100).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
                       </div>
                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
                         <p className="text-xs text-slate-400 font-bold uppercase">Max Error</p>
-                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.max_error * 10000).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
+                        <p className="text-lg font-black text-slate-700">{(selectedRecData.statistics.max_error * 100).toFixed(2)} <span className="text-xs font-normal text-slate-400">bps</span></p>
                       </div>
                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
                         <p className="text-xs text-slate-400 font-bold uppercase">Bond Count</p>
@@ -305,7 +346,7 @@ export default function PCAPage() {
                       * 誤差(Error) = 実測利回り(Actual) - PCA復元利回り(Reconstructed). 
                       色が赤いほど残存期間が長く、青いほど短いことを示します。
                     </p>
-                  </>
+                  </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-slate-400">
                     Data not available

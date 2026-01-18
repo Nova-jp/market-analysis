@@ -4,13 +4,15 @@ PCA Analysis Service
 """
 import numpy as np
 import pandas as pd
+import pickle
+import os
+import shutil
 from datetime import date, datetime, timedelta
 from scipy.interpolate import CubicSpline
 from sklearn.decomposition import PCA
 from typing import Dict, List, Tuple, Optional
 
 from app.core.config import settings
-
 
 class PCAService:
     """主成分分析サービスクラス"""
@@ -19,6 +21,48 @@ class PCAService:
         from data.utils.database_manager import DatabaseManager
         self.MIN_MATURITY = 0.5  # 最小残存期間（年）
         self.db_manager = DatabaseManager()
+        self.cache_dir = ".cache/pca"
+
+    def _get_cache_path(self, end_date: str, lookback_days: int) -> str:
+        """キャッシュファイルのパスを生成"""
+        # end_dateがNoneの場合は今日の日付を使用（ファイル名用）
+        d_str = end_date if end_date else date.today().strftime('%Y-%m-%d')
+        return os.path.join(self.cache_dir, f"pca_cache_{d_str}_{lookback_days}.pkl")
+
+    def save_cache(self, end_date: str, lookback_days: int, data: Dict):
+        """分析結果をキャッシュに保存"""
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+        
+        path = self._get_cache_path(end_date, lookback_days)
+        try:
+            with open(path, 'wb') as f:
+                pickle.dump(data, f)
+        except Exception as e:
+            print(f"Cache save error: {e}")
+
+    def load_cache(self, end_date: str, lookback_days: int) -> Optional[Dict]:
+        """キャッシュから分析結果を取得"""
+        path = self._get_cache_path(end_date, lookback_days)
+        if os.path.exists(path):
+            try:
+                with open(path, 'rb') as f:
+                    return pickle.load(f)
+            except Exception as e:
+                print(f"Cache load error: {e}")
+        return None
+
+    def clear_cache(self):
+        """キャッシュディレクトリ内のすべてのファイルを削除"""
+        if os.path.exists(self.cache_dir):
+            for filename in os.listdir(self.cache_dir):
+                file_path = os.path.join(self.cache_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f"Error deleting cache file {file_path}: {e}")
+            print("PCA cache cleared.")
 
     def normalize_bond_code(self, bond_code) -> str:
         """bond_codeを9桁に正規化（0パディング）"""
@@ -31,22 +75,32 @@ class PCAService:
         except ValueError:
             return code_str
 
-    def get_latest_dates(self, limit: int = 200) -> List[str]:
+    def get_analysis_dates(self, limit: int = 200, end_date: Optional[str] = None) -> List[str]:
         """
-        最新の営業日を取得
+        分析対象の日付を取得（基準日から過去へ）
         """
-        query = """
-            SELECT DISTINCT trade_date 
-            FROM bond_data 
-            ORDER BY trade_date DESC 
-            LIMIT %s
-        """
+        params = []
+        sql_parts = ["SELECT DISTINCT trade_date FROM bond_data"]
+        
+        if end_date and end_date.strip():
+            # DATE型へのキャストを明示
+            sql_parts.append("WHERE trade_date <= %s::date")
+            params.append(end_date)
+            
+        sql_parts.append("ORDER BY trade_date DESC LIMIT %s")
+        params.append(limit)
+        
+        query = " ".join(sql_parts)
+        
         try:
-            rows = self.db_manager.execute_query(query, (limit,))
+            rows = self.db_manager.execute_query(query, tuple(params))
+            if not rows:
+                print(f"DEBUG: No dates found for query: {query} with params: {params}")
             return [str(row[0]) for row in rows]
         except Exception as e:
-            print(f"日付取得エラー: {e}")
-            return []
+            import logging
+            logging.getLogger(__name__).error(f"日付取得エラー: {e}")
+            raise Exception(f"Database error while fetching dates: {str(e)}")
 
     def get_yield_data_bulk(self, dates: List[str]) -> pd.DataFrame:
         """指定された複数の日付のデータを一括取得"""
@@ -280,70 +334,75 @@ class PCAService:
     def run_pca_analysis(
         self,
         lookback_days: int = 100,
-        n_components: int = 3
+        n_components: int = 3,
+        end_date: Optional[str] = None
     ) -> Dict:
         """
-        完全なPCA分析を実行 (最適化版: 一括取得)
+        PCA分析を実行（キャッシュ対応）
         """
         import logging
         logger = logging.getLogger(__name__)
 
-        # 1. 日付取得
-        available_dates = self.get_latest_dates(limit=200)
-        target_dates = available_dates[:lookback_days]
-        logger.info(f"取得した日付数: {len(target_dates)}")
+        # end_dateが空文字の場合はNoneにする
+        if end_date and not end_date.strip():
+            end_date = None
 
-        if not target_dates:
+        # 0. キャッシュチェック
+        available_dates = self.get_analysis_dates(limit=1, end_date=end_date)
+        if not available_dates:
              return {"error": "No dates available"}
-
-        # 2. イールドカーブデータ一括取得
-        bulk_df = self.get_yield_data_bulk(target_dates)
+        actual_end_date = available_dates[0]
         
-        daily_data = {}
-        # 日付ごとに分割して辞書に格納
-        for date in target_dates:
-            day_df = bulk_df[bulk_df['trade_date_str'] == date].copy()
-            if not day_df.empty:
-                daily_data[date] = day_df
-
-        logger.info(f"有効な日数: {len(daily_data)} / {len(target_dates)}")
-
-        # 3. スプライン補間
-        X, common_grid, valid_dates = self.interpolate_yield_curves(daily_data)
-        logger.info(f"補間後の有効日数: {len(valid_dates)}, データ形状: {X.shape}")
-
-        if len(valid_dates) < 2:
-             return {"error": "Not enough valid data for PCA"}
-
-        # 4. PCA実行
-        pca, X_pca = self.perform_pca(X, n_components)
-
-        # 5. 全日付の復元データを計算
-        all_reconstructions = {}
-        for idx, date in enumerate(valid_dates):
-            original_df = daily_data[date]
+        cache_data = self.load_cache(actual_end_date, lookback_days)
+        if cache_data and cache_data['pca'].n_components == n_components:
+            logger.info(f"Using cached PCA model for {actual_end_date}")
+            pca = cache_data['pca']
+            X_pca = cache_data['X_pca']
+            common_grid = cache_data['common_grid']
+            valid_dates = cache_data['valid_dates']
+            daily_data = cache_data['daily_data']
+        else:
+            # 1. データ取得（全期間）
+            all_dates = self.get_analysis_dates(limit=lookback_days + 50, end_date=actual_end_date)
+            target_dates = all_dates[:lookback_days]
             
-            reconstruction_df = self.reconstruct_date(
-                date, idx, pca, X_pca, common_grid, actual_data=original_df
-            )
-            error_stats = self.calculate_error_statistics(reconstruction_df)
+            bulk_df = self.get_yield_data_bulk(target_dates)
+            daily_data = {}
+            for d in target_dates:
+                day_df = bulk_df[bulk_df['trade_date_str'] == d].copy()
+                if not day_df.empty:
+                    daily_data[d] = day_df
 
-            all_reconstructions[date] = {
-                'data': reconstruction_df.to_dict(orient='records'),
-                'statistics': error_stats
-            }
+            # 2. スプライン補間
+            X, common_grid, valid_dates = self.interpolate_yield_curves(daily_data)
+            if len(valid_dates) < 2:
+                 return {"error": "Not enough valid data"}
 
-        # 6. 結果を整形
+            # 3. PCA実行
+            pca, X_pca = self.perform_pca(X, n_components)
+            
+            # キャッシュ保存
+            self.save_cache(actual_end_date, lookback_days, {
+                'pca': pca,
+                'X_pca': X_pca,
+                'common_grid': common_grid,
+                'valid_dates': valid_dates,
+                'daily_data': daily_data
+            })
+
+        # 4. 最新日の復元データのみ計算して返す（初期表示用）
         latest_date = valid_dates[0]
+        latest_rec_df = self.reconstruct_date(
+            latest_date, 0, pca, X_pca, common_grid, actual_data=daily_data[latest_date]
+        )
+        
         result = {
             'parameters': {
                 'lookback_days': lookback_days,
                 'n_components': n_components,
+                'actual_end_date': actual_end_date,
                 'valid_dates_count': len(valid_dates),
-                'date_range': {
-                    'start': valid_dates[-1],
-                    'end': valid_dates[0]
-                }
+                'date_range': {'start': valid_dates[-1], 'end': valid_dates[0]}
             },
             'pca_model': {
                 'explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
@@ -352,20 +411,53 @@ class PCAService:
                 'mean': pca.mean_.tolist()
             },
             'principal_component_scores': {
-                'dates': valid_dates[:30],  # 直近30日分
+                'dates': valid_dates[:30],
                 'scores': X_pca[:30, :].tolist()
             },
-            'reconstruction': {
-                'dates': valid_dates,  # 全日付リスト
-                'all_dates': all_reconstructions,  # 全日付の復元データ
-                'latest_date': latest_date,
-                'data': all_reconstructions[latest_date]['data'],
-                'statistics': all_reconstructions[latest_date]['statistics']
+            'reconstruction_dates': valid_dates, # 日付リストだけ返す
+            'latest_reconstruction': {
+                'date': latest_date,
+                'data': latest_rec_df.to_dict(orient='records'),
+                'statistics': self.calculate_error_statistics(latest_rec_df)
             },
             'common_grid': common_grid.tolist()
         }
-
         return result
+
+    def get_reconstruction_for_date(
+        self,
+        target_date: str,
+        end_date: str,
+        lookback_days: int,
+        n_components: int
+    ) -> Dict:
+        """
+        キャッシュされたモデルを使用して、特定の日付の復元誤差を計算
+        """
+        cache_data = self.load_cache(end_date, lookback_days)
+        if not cache_data:
+            return {"error": "Cache not found. Please run analysis first."}
+            
+        valid_dates = cache_data['valid_dates']
+        if target_date not in valid_dates:
+            return {"error": f"Date {target_date} not in analysis period."}
+            
+        date_idx = valid_dates.index(target_date)
+        pca = cache_data['pca']
+        X_pca = cache_data['X_pca']
+        common_grid = cache_data['common_grid']
+        daily_data = cache_data['daily_data']
+        
+        rec_df = self.reconstruct_date(
+            target_date, date_idx, pca, X_pca, common_grid, actual_data=daily_data[target_date]
+        )
+        
+        return {
+            'date': target_date,
+            'data': rec_df.to_dict(orient='records'),
+            'statistics': self.calculate_error_statistics(rec_df)
+        }
+
 
     def get_swap_data(self, product_type: str = 'OIS', limit_days: int = 300) -> pd.DataFrame:
         """

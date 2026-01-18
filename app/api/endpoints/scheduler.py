@@ -21,6 +21,7 @@ from typing import Optional
 from app.services.scheduler_service import SchedulerService
 from app.services.irs_scheduler_service import IRSSchedulerService
 from app.services.asw_scheduler_service import ASWSchedulerService
+from app.services.pca_service import PCAService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -339,6 +340,14 @@ async def asw_daily_calculation(
     logger.info("=" * 60)
 
     try:
+        # ASW計算の前にPCAキャッシュをクリア
+        try:
+            pca_service = PCAService()
+            pca_service.clear_cache()
+            logger.info("PCA cache cleared as part of daily update")
+        except Exception as cache_err:
+            logger.error(f"Failed to clear PCA cache: {cache_err}")
+
         result = await asw_scheduler_service.calculate_daily_asw()
 
         if result["status"] in ["success", "skipped"]:
@@ -354,3 +363,25 @@ async def asw_daily_calculation(
         error_msg = f"Unexpected error in ASW calculation: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise HTTPException(status_code=500, detail=error_msg)
+
+
+@router.post("/api/scheduler/clear-pca-cache")
+async def clear_pca_cache(
+    request: Request,
+    x_cloudscheduler: Optional[str] = Header(None, alias="X-CloudScheduler"),
+    user_agent: Optional[str] = Header(None, alias="User-Agent")
+):
+    """
+    PCAキャッシュを手動またはスケジュールでクリアするエンドポイント
+    """
+    if not verify_cloud_scheduler_request(request, x_cloudscheduler, user_agent):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        pca_service = PCAService()
+        pca_service.clear_cache()
+        return {"status": "success", "message": "PCA cache cleared"}
+    except Exception as e:
+        logger.error(f"Error clearing PCA cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

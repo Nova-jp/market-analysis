@@ -1,7 +1,17 @@
 export const fetcher = async (url: string) => {
   const res = await fetch(url);
   if (!res.ok) {
-    const error = new Error('An error occurred while fetching the data.');
+    let detail = 'An error occurred while fetching the data.';
+    try {
+      const errorJson = await res.json();
+      if (errorJson && errorJson.detail) {
+        detail = errorJson.detail;
+      }
+    } catch (e) {
+      // JSONのパースに失敗した場合はデフォルトメッセージのまま
+    }
+    const error = new Error(detail);
+    (error as any).detail = detail; // プロパティを付随させる
     throw error;
   }
   return res.json();
@@ -44,6 +54,30 @@ export interface PCAScore {
   [key: string]: string | number;
 }
 
+export interface ReconstructionDataPoint {
+  maturity: number;
+  bond_code: string;
+  bond_name: string;
+  original_yield: number;
+  reconstructed_yield: number;
+  error: number;
+}
+
+export interface ReconstructionStatistics {
+  mae: number;
+  mse: number;
+  rmse: number;
+  max_error: number;
+  std: number;
+  min: number;
+  max: number;
+}
+
+export interface DailyReconstruction {
+  data: ReconstructionDataPoint[];
+  statistics: ReconstructionStatistics;
+}
+
 export interface PCAResponse {
   components: PCAComponent[];
   scores: PCAScore[];
@@ -53,6 +87,7 @@ export interface PCAResponse {
     days: number;
     components: number;
   };
+  reconstruction?: { [date: string]: DailyReconstruction };
 }
 
 // Market Amount Types
