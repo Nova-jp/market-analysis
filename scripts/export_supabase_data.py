@@ -25,7 +25,7 @@ HEADERS = {
 }
 
 # エクスポート対象テーブル
-TABLES = ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']
+TABLES = ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']
 
 # エクスポートディレクトリ
 EXPORT_DIR = 'data_exports'

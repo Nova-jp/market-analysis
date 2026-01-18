@@ -6,7 +6,7 @@
 -- 既存テーブル削除（クリーンインストール用）
 DROP TABLE IF EXISTS bond_data CASCADE;
 DROP TABLE IF EXISTS boj_holdings CASCADE;
-DROP TABLE IF EXISTS irs_settlement_rates CASCADE;
+DROP TABLE IF EXISTS irs_data CASCADE;
 DROP TABLE IF EXISTS bond_auction CASCADE;
 
 -- =====================================================
@@ -113,9 +113,9 @@ CREATE INDEX idx_boj_holdings_bond_type ON boj_holdings (bond_type);
 COMMENT ON TABLE boj_holdings IS '日本銀行が保有する国債の銘柄別残高';
 
 -- =====================================================
--- 3. irs_settlement_rates テーブル（金利スワップ）
+-- 3. irs_data テーブル（金利スワップ）
 -- =====================================================
-CREATE TABLE irs_settlement_rates (
+CREATE TABLE irs_data (
     id BIGSERIAL PRIMARY KEY,
     trade_date DATE NOT NULL,
     product_type VARCHAR(20) NOT NULL,
@@ -127,11 +127,11 @@ CREATE TABLE irs_settlement_rates (
     CONSTRAINT unique_irs_rate UNIQUE (trade_date, product_type, tenor)
 );
 
-CREATE INDEX idx_irs_trade_date ON irs_settlement_rates(trade_date DESC);
-CREATE INDEX idx_irs_product_type ON irs_settlement_rates(product_type);
-CREATE INDEX idx_irs_date_product ON irs_settlement_rates(trade_date DESC, product_type);
+CREATE INDEX idx_irs_trade_date ON irs_data(trade_date DESC);
+CREATE INDEX idx_irs_product_type ON irs_data(product_type);
+CREATE INDEX idx_irs_date_product ON irs_data(trade_date DESC, product_type);
 
-COMMENT ON TABLE irs_settlement_rates IS '金利スワップ清算値段（JPX日次データ）';
+COMMENT ON TABLE irs_data IS '金利スワップ清算値段（JPX日次データ）';
 
 -- =====================================================
 -- 4. bond_auction テーブル（国債入札結果）
@@ -173,5 +173,5 @@ COMMENT ON TABLE bond_auction IS '国債入札結果データ（財務省ヒス�
 DO $$
 BEGIN
     RAISE NOTICE 'Cloud SQL用テーブル作成完了';
-    RAISE NOTICE '作成テーブル: bond_data, boj_holdings, irs_settlement_rates, bond_auction';
+    RAISE NOTICE '作成テーブル: bond_data, boj_holdings, irs_data, bond_auction';
 END $$;

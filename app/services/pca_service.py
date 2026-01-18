@@ -374,7 +374,7 @@ class PCAService:
         # 最新の日付を取得
         dates_query = """
             SELECT DISTINCT trade_date 
-            FROM irs_settlement_rates 
+            FROM irs_data 
             WHERE product_type = %s
             ORDER BY trade_date DESC 
             LIMIT %s
@@ -391,7 +391,7 @@ class PCAService:
             # データ取得
             query = """
                 SELECT trade_date, tenor, rate
-                FROM irs_settlement_rates
+                FROM irs_data
                 WHERE product_type = %s
                   AND trade_date >= %s
                   AND trade_date <= %s

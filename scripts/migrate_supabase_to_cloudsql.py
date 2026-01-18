@@ -47,7 +47,7 @@ def get_supabase_record_counts():
         supabase = create_client(supabase_url, supabase_key)
         counts = {}
 
-        for table in ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']:
+        for table in ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']:
             try:
                 response = supabase.table(table).select('*', count='exact').limit(1).execute()
                 counts[table] = response.count
@@ -82,7 +82,7 @@ def get_cloudsql_record_counts():
         cursor = conn.cursor()
 
         counts = {}
-        for table in ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']:
+        for table in ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']:
             try:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 counts[table] = cursor.fetchone()[0]
@@ -135,7 +135,7 @@ def main():
     # ステップ3: pg_dump実行
     print_header("[ステップ3/5] pg_dump実行")
 
-    tables = ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']
+    tables = ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']
     if not dump_database(tables=tables):
         print("\n❌ dump失敗")
         return False

@@ -130,7 +130,7 @@ def main():
         import_summary = {}
 
         # 各テーブルの最新エクスポートファイルを見つける
-        for table_name in ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']:
+        for table_name in ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']:
             files = glob.glob(f"{EXPORT_DIR}/{table_name}_*.json")
 
             if not files:

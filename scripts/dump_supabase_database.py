@@ -133,7 +133,7 @@ def main():
     """メイン処理"""
 
     # 移行対象テーブル
-    tables = ['bond_data', 'boj_holdings', 'irs_settlement_rates', 'bond_auction']
+    tables = ['bond_data', 'boj_holdings', 'irs_data', 'bond_auction']
 
     print("\n" + "="*60)
     print("Supabase データベース エクスポート")

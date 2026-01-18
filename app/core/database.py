@@ -60,7 +60,7 @@ class DatabaseManager:
         limit = params.get("limit", 100)
         offset = params.get("offset", 0)
         
-        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings", "irs_settlement_rates", "bond_market_amount"]
+        allowed_tables = ["bond_data", "bond_auction", "economic_indicators", "boj_holdings", "irs_data", "bond_market_amount"]
         if table not in allowed_tables:
             return {"success": False, "error": f"Invalid table name: {table}"}
 
@@ -329,11 +329,7 @@ class DatabaseManager:
 
             # Tenor sort might be tricky because it's string (1Y, 10Y). 
             # ideally we sort by a converted value, but for now simple fetch is enough.
-            sql = f"""
-                SELECT * FROM irs_settlement_rates 
-                {where_clause}
-                LIMIT :limit
-            """
+            sql = f"SELECT * FROM irs_data {where_clause} ORDER BY trade_date DESC, tenor ASC LIMIT :limit"
             
             async with AsyncSessionLocal() as session:
                 stmt = text(sql)
@@ -354,7 +350,7 @@ class DatabaseManager:
         try:
             sql = """
                 SELECT trade_date, tenor, rate 
-                FROM irs_settlement_rates 
+                FROM irs_data 
                 WHERE product_type = :product_type 
                 AND trade_date >= :start_date 
                 AND trade_date <= :end_date

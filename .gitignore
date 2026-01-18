@@ -124,8 +124,19 @@ PROJECT_STRUCTURE.md
 SESSION_STATUS.md
 README_*.md
 
+# Node.js (Modern Frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnp*
+frontend/.pnp.js
+
 # 旧ディレクトリ構造（移行後削除予定）
-frontend/
 webapp/
 scripts/daily_collector.py
 analysis/simple_pca_demo.py

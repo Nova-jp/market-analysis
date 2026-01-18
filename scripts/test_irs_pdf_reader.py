@@ -55,7 +55,7 @@ def test_pdf_reading(pdf_path: str):
 
 
 if __name__ == "__main__":
-    pdf_path = "/tmp/irs_settlement_rates.pdf"
+    pdf_path = "/tmp/irs_data.pdf"
 
     if not Path(pdf_path).exists():
         print(f"エラー: PDFファイルが見つかりません: {pdf_path}")

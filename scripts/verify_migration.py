@@ -30,7 +30,7 @@ def get_supabase_counts():
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     counts = {}
 
-    for table in ['bond_data', 'boj_holdings', 'bond_auction', 'irs_settlement_rates']:
+    for table in ['bond_data', 'boj_holdings', 'bond_auction', 'irs_data']:
         response = supabase.table(table).select('*', count='exact').limit(1).execute()
         counts[table] = response.count
         print(f"{table:25s}: {response.count:,}")
@@ -55,7 +55,7 @@ def get_cloudsql_counts():
 
     counts = {}
 
-    for table in ['bond_data', 'boj_holdings', 'bond_auction', 'irs_settlement_rates']:
+    for table in ['bond_data', 'boj_holdings', 'bond_auction', 'irs_data']:
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         count = cursor.fetchone()[0]
         counts[table] = count

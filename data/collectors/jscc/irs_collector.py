@@ -151,7 +151,7 @@ class IRSCollector:
             # DatabaseManagerを使用してデータを挿入
             saved_count = self.db_manager.batch_insert_data(
                 data_list=data,
-                table_name="irs_settlement_rates"
+                table_name="irs_data"
             )
 
             logger.info(f"Successfully saved {saved_count} records")

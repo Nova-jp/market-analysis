@@ -235,7 +235,7 @@ def main():
     combined_df = combined_df.sort_values('trade_date')
 
     # Supabaseにインポート
-    import_data_to_supabase(combined_df, table_name='irs_raw', batch_size=500)
+    import_data_to_supabase(combined_df, table_name='irs_data', batch_size=500)
 
     logger.info("✓ すべての処理が完了しました")
 

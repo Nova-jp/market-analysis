@@ -38,9 +38,9 @@ def check_data_availability(engine, target_date):
             {"date": target_date}
         ).scalar()
         
-        # Check irs_raw (TONA OIS)
+        # Check irs_data (OIS)
         ois_count = conn.execute(
-            text("SELECT count(*) FROM irs_raw WHERE trade_date = :date AND rate_type = 'TONA'"),
+            text("SELECT count(*) FROM irs_data WHERE trade_date = :date AND product_type = 'OIS'"),
             {"date": target_date}
         ).scalar()
         
@@ -66,7 +66,7 @@ def main():
     if not has_bond or not has_ois:
         missing = []
         if not has_bond: missing.append("bond_data")
-        if not has_ois: missing.append("irs_raw (OIS)")
+        if not has_ois: missing.append("irs_data (OIS)")
         logger.warning(f"Data not ready for {target_date}. Missing: {', '.join(missing)}. Skipping.")
         sys.exit(0)
 

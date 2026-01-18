@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Migrate data from irs_raw to irs_settlement_rates
+Migrate data from irs_raw to irs_data
 """
 import sys
 import os
@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def migrate_data():
-    logger.info("Starting migration from irs_raw to irs_settlement_rates...")
+    logger.info("Starting migration from irs_raw to irs_data...")
     db = DatabaseManager()
 
     # 1. Fetch data from irs_raw
@@ -56,13 +56,13 @@ def migrate_data():
         if transformed_row['rate'] is not None:
             transformed_data.append(transformed_row)
 
-    # 3. Insert into irs_settlement_rates
-    logger.info(f"Inserting {len(transformed_data)} records into irs_settlement_rates...")
+    # 3. Insert into irs_data
+    logger.info(f"Inserting {len(transformed_data)} records into irs_data...")
     
     # Use batch_insert_data which handles batching and "ON CONFLICT DO NOTHING"
     inserted_count = db.batch_insert_data(
         data_list=transformed_data,
-        table_name='irs_settlement_rates',
+        table_name='irs_data',
         batch_size=500
     )
 

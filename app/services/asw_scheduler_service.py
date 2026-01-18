@@ -29,8 +29,8 @@ class ASWSchedulerService:
             async with AsyncSessionLocal() as session:
                 # 1. データの存在確認 (OIS)
                 ois_query = text("""
-                    SELECT tenor, rate FROM irs_raw 
-                    WHERE trade_date = :date AND rate_type = 'TONA'
+                    SELECT tenor, rate FROM irs_data 
+                    WHERE trade_date = :date AND product_type = 'OIS'
                 """)
                 ois_result = await session.execute(ois_query, {"date": target_date})
                 ois_data = [{'tenor': row[0], 'rate': float(row[1])} for row in ois_result]

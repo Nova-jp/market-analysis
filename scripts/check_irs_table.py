@@ -17,7 +17,7 @@ load_dotenv()
 
 
 def check_table_exists():
-    """irs_settlement_ratesテーブルの存在確認"""
+    """irs_dataテーブルの存在確認"""
 
     supabase_url = os.getenv('SUPABASE_URL')
     supabase_key = os.getenv('SUPABASE_KEY')
@@ -27,14 +27,14 @@ def check_table_exists():
         sys.exit(1)
 
     # Supabase REST APIでテーブルにアクセスを試みる
-    url = f"{supabase_url}/rest/v1/irs_settlement_rates"
+    url = f"{supabase_url}/rest/v1/irs_data"
     headers = {
         'apikey': supabase_key,
         'Authorization': f'Bearer {supabase_key}',
     }
 
     print("=" * 80)
-    print("irs_settlement_rates テーブル確認中...")
+    print("irs_data テーブル確認中...")
     print("=" * 80)
 
     try:
@@ -69,7 +69,7 @@ def check_table_exists():
             print("1. Supabase管理画面にアクセス")
             print("2. SQL Editorを開く")
             print("3. 以下のSQLファイルを実行:")
-            print("   scripts/sql/schema/create_irs_settlement_rates_table.sql")
+            print("   scripts/sql/schema/create_irs_data_table.sql")
             print("=" * 80)
             print()
 

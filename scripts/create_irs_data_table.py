@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 金利スワップテーブル作成スクリプト
-Supabaseにirs_settlement_ratesテーブルを作成
+Supabaseにirs_dataテーブルを作成
 """
 
 import sys
@@ -18,10 +18,10 @@ load_dotenv()
 
 
 def create_irs_table():
-    """Supabaseにirs_settlement_ratesテーブルを作成"""
+    """Supabaseにirs_dataテーブルを作成"""
 
     # SQLファイルを読み込む
-    sql_file = project_root / "scripts" / "sql" / "schema" / "create_irs_settlement_rates_table.sql"
+    sql_file = project_root / "scripts" / "sql" / "schema" / "create_irs_data_table.sql"
 
     if not sql_file.exists():
         print(f"エラー: SQLファイルが見つかりません: {sql_file}")

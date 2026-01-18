@@ -79,6 +79,6 @@
 
 ### 3. 日次運用プロセス
 
-- **データ依存関係**: `bond_data` (18:00更新) と `irs_raw` (21:00更新) が揃った後、21:30に `ASW_data` の計算を実行する。
+- **データ依存関係**: `bond_data` (18:00更新) と `irs_data` (21:00更新) が揃った後、21:30に `ASW_data` の計算を実行する。
 
 - **自動実行**: Cloud Run サーバー上の `/api/scheduler/asw-daily-calculation` が Cloud Scheduler によって実行される。

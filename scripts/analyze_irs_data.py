@@ -166,7 +166,7 @@ def save_to_csv(data: List[Dict[str, Any]], output_path: str):
 
 
 if __name__ == "__main__":
-    pdf_path = "/tmp/irs_settlement_rates.pdf"
+    pdf_path = "/tmp/irs_data.pdf"
     csv_path = "/tmp/irs_data_sample.csv"
 
     if not Path(pdf_path).exists():

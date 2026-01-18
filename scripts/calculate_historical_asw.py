@@ -58,8 +58,8 @@ def fetch_ois_data(conn, trade_date):
     """
     query = text("""
         SELECT tenor, rate 
-        FROM irs_raw 
-        WHERE trade_date = :date AND rate_type = 'TONA'
+        FROM irs_data 
+        WHERE trade_date = :date AND product_type = 'OIS'
     """)
     result = conn.execute(query, {"date": trade_date})
     return [{'tenor': row[0], 'rate': float(row[1])} for row in result]

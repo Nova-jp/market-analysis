@@ -7,7 +7,7 @@
 -- 更新頻度: 日次
 -- =====================================================
 
-CREATE TABLE IF NOT EXISTS irs_settlement_rates (
+CREATE TABLE IF NOT EXISTS irs_data (
     -- 主キー
     id BIGSERIAL PRIMARY KEY,
 
@@ -43,32 +43,32 @@ CREATE TABLE IF NOT EXISTS irs_settlement_rates (
 
 -- 取引日でのクエリ最適化
 CREATE INDEX IF NOT EXISTS idx_irs_trade_date
-ON irs_settlement_rates(trade_date DESC);
+ON irs_data(trade_date DESC);
 
 -- プロダクトタイプでのクエリ最適化
 CREATE INDEX IF NOT EXISTS idx_irs_product_type
-ON irs_settlement_rates(product_type);
+ON irs_data(product_type);
 
 -- 複合インデックス: 日付とプロダクトでのフィルタリング
 CREATE INDEX IF NOT EXISTS idx_irs_date_product
-ON irs_settlement_rates(trade_date DESC, product_type);
+ON irs_data(trade_date DESC, product_type);
 
 -- =====================================================
 -- Row Level Security (RLS) ポリシー設定
 -- =====================================================
 
 -- RLSを有効化
-ALTER TABLE irs_settlement_rates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE irs_data ENABLE ROW LEVEL SECURITY;
 
 -- 読み取りポリシー: 誰でも読み取り可能
-CREATE POLICY "irs_settlement_rates_read_policy"
-ON irs_settlement_rates
+CREATE POLICY "irs_data_read_policy"
+ON irs_data
 FOR SELECT
 USING (true);
 
 -- 書き込みポリシー: 認証済みユーザーのみ
-CREATE POLICY "irs_settlement_rates_write_policy"
-ON irs_settlement_rates
+CREATE POLICY "irs_data_write_policy"
+ON irs_data
 FOR ALL
 USING (auth.role() = 'authenticated');
 
@@ -76,20 +76,20 @@ USING (auth.role() = 'authenticated');
 -- コメント追加
 -- =====================================================
 
-COMMENT ON TABLE irs_settlement_rates IS
+COMMENT ON TABLE irs_data IS
 '金利スワップ清算値段（JPX日次データ）';
 
-COMMENT ON COLUMN irs_settlement_rates.trade_date IS
+COMMENT ON COLUMN irs_data.trade_date IS
 '取引日';
 
-COMMENT ON COLUMN irs_settlement_rates.product_type IS
+COMMENT ON COLUMN irs_data.product_type IS
 'プロダクトタイプ (OIS, 3M_TIBOR, 6M_TIBOR, 1M_TIBOR)';
 
-COMMENT ON COLUMN irs_settlement_rates.tenor IS
+COMMENT ON COLUMN irs_data.tenor IS
 '期間 (1D, 1W, 1M, 3M(0×3), 1Y, 10Yなど)';
 
-COMMENT ON COLUMN irs_settlement_rates.rate IS
+COMMENT ON COLUMN irs_data.rate IS
 '金利';
 
-COMMENT ON COLUMN irs_settlement_rates.unit IS
+COMMENT ON COLUMN irs_data.unit IS
 '単位 (%またはbp)';
