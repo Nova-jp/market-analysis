@@ -138,48 +138,110 @@ class DailyDataCollector:
             return False
 
     def collect_mof_data(self):
-        """財務省入札データの収集 (当日分)"""
+        """財務省入札データの収集 (不足分を自動補完)"""
         try:
             logger.info("--- 財務省入札データ確認開始 ---")
-            # JSTで今日の日付を取得
+            
+            import calendar
+            from datetime import date
+            
+            # DBの最新日付取得
+            query = "SELECT MAX(auction_date) FROM bond_auction"
+            rows = self.db_manager.execute_query(query)
+            latest_date_db = rows[0][0] if rows and rows[0][0] else None
+            
             today = datetime.now(JST).date()
             
-            # 今日のカレンダーを確認
-            html = self.mof_collector.fetch_calendar_page(today.year, today.month)
-            if not html:
-                logger.warning("カレンダーページ取得失敗")
-                return False
-
-            # 今日の入札予定を確認
-            schedules = self.mof_collector.extract_auction_schedule(html, today)
+            if not latest_date_db:
+                # DBが空の場合は過去30日分を確認
+                start_date = today - timedelta(days=30)
+                logger.info("DBに入札データがありません。過去30日分を確認します。")
+            else:
+                # DBの最終日の翌日から確認
+                # latest_date_db は date型または文字列の可能性あり
+                if isinstance(latest_date_db, str):
+                    latest_date_db = date.fromisoformat(latest_date_db)
+                    
+                start_date = latest_date_db + timedelta(days=1)
             
-            if not schedules:
-                logger.info("本日の入札予定なし")
+            end_date = today
+            
+            if start_date > end_date:
+                logger.info(f"入札データは最新です (最終更新: {latest_date_db})")
                 return True
                 
-            logger.info(f"本日の入札予定: {[s['bond_name'] for s in schedules]}")
+            logger.info(f"確認期間: {start_date} ～ {end_date}")
             
-            # データ収集実行
-            results = self.mof_collector.collect_auction_data(today)
+            # 月ごとにまとめて処理（カレンダー取得回数を減らすため）
+            current_date = start_date
+            processed_months = set()
+            total_saved = 0
             
-            if results:
-                # 日付型を文字列に変換 (JSON互換/DB保存用)
-                for r in results:
-                    if 'auction_date' in r and hasattr(r['auction_date'], 'isoformat'):
-                        r['auction_date'] = r['auction_date'].isoformat()
-                    if 'issue_date' in r and hasattr(r['issue_date'], 'isoformat'):
-                        r['issue_date'] = r['issue_date'].isoformat()
-                    if 'maturity_date' in r and hasattr(r['maturity_date'], 'isoformat'):
-                        r['maturity_date'] = r['maturity_date'].isoformat()
-                    # 不要なキー削除
-                    if 'source_url' in r: del r['source_url']
+            while current_date <= end_date:
+                year = current_date.year
+                month = current_date.month
+                
+                if (year, month) in processed_months:
+                    current_date += timedelta(days=1)
+                    continue
+                
+                processed_months.add((year, month))
+                
+                # カレンダーページ取得
+                html = self.mof_collector.fetch_calendar_page(year, month)
+                if not html:
+                    logger.warning(f"{year}年{month}月のカレンダー取得失敗")
+                    # 次の月へ
+                    if month == 12:
+                        current_date = date(year + 1, 1, 1)
+                    else:
+                        current_date = date(year, month + 1, 1)
+                    continue
 
-                saved = self.db_manager.batch_insert_data(results, table_name='bond_auction')
-                logger.info(f"入札結果 {len(results)}件中 {saved}件を保存しました")
-            else:
-                logger.info("入札結果はまだ公開されていないか、取得できませんでした")
-            
-            logger.info("--- 財務省入札データ確認完了 ---")
+                # その月の最終日を計算
+                _, last_day = calendar.monthrange(year, month)
+                
+                # 月内の対象日をチェック
+                for day in range(1, last_day + 1):
+                    check_date = date(year, month, day)
+                    if check_date < start_date:
+                        continue
+                    if check_date > end_date:
+                        break
+                    
+                    # カレンダーから予定抽出
+                    schedules = self.mof_collector.extract_auction_schedule(html, check_date)
+                    
+                    if schedules:
+                        logger.info(f"入札検出 ({check_date}): {[s['bond_name'] for s in schedules]}")
+                        
+                        # データ収集
+                        results = self.mof_collector.collect_auction_data(check_date)
+                        
+                        if results:
+                            # DB保存用整形
+                            for r in results:
+                                if 'auction_date' in r and hasattr(r['auction_date'], 'isoformat'):
+                                    r['auction_date'] = r['auction_date'].isoformat()
+                                if 'issue_date' in r and hasattr(r['issue_date'], 'isoformat'):
+                                    r['issue_date'] = r['issue_date'].isoformat()
+                                if 'maturity_date' in r and hasattr(r['maturity_date'], 'isoformat'):
+                                    r['maturity_date'] = r['maturity_date'].isoformat()
+                                if 'source_url' in r: del r['source_url']
+
+                            saved = self.db_manager.batch_insert_data(results, table_name='bond_auction')
+                            total_saved += saved
+                            logger.info(f"  -> {saved}件保存")
+                        else:
+                            logger.info(f"  -> 結果未公開")
+                
+                # 次の月へ
+                if month == 12:
+                    current_date = date(year + 1, 1, 1)
+                else:
+                    current_date = date(year, month + 1, 1)
+
+            logger.info(f"--- 財務省入札データ確認完了 (新規保存: {total_saved}件) ---")
             return True
 
         except Exception as e:
