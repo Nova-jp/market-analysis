@@ -62,16 +62,11 @@ export default function MarketAmountPage() {
   const fetchSearchResults = async (query: string) => {
     setIsSearching(true);
     try {
-      const res: BondSearchResponse = await fetcher('/api/market-amount/bonds/search?limit=100');
-      let filtered = res.bonds;
-      if (query) {
-        const lowerQ = query.toLowerCase();
-        filtered = res.bonds.filter(b => 
-          b.bond_code.includes(query) || 
-          b.bond_name.toLowerCase().includes(lowerQ)
-        );
-      }
-      setSearchResults(filtered);
+      const url = query 
+        ? `/api/market-amount/bonds/search?query=${encodeURIComponent(query)}&limit=100`
+        : '/api/market-amount/bonds/search?limit=100';
+      const res: BondSearchResponse = await fetcher(url);
+      setSearchResults(res.bonds);
     } catch (err) {
       console.error('Search failed', err);
     } finally {

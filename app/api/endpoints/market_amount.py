@@ -189,38 +189,30 @@ async def get_bond_market_amount_timeseries(
 
 @router.get("/api/market-amount/bonds/search", response_model=BondSearchResponse)
 async def search_bonds(
+    query: Optional[str] = Query(None, description="検索キーワード (銘柄コードまたは名称)"),
     bond_type: Optional[str] = Query(None, description="債券種別フィルター (例: 10年債)"),
-    limit: int = Query(50, ge=1, le=200, description="取得件数")
+    limit: int = Query(100, ge=1, le=1000, description="取得件数")
 ):
     """
-    銘柄一覧を取得（検索用）
+    銘柄一覧を取得（検索用）。全期間のユニークな銘柄を返します。
     """
     try:
-        # パラメータ構築 (新テーブル bond_market_amount を参照)
-        params = {
-            'order': 'trade_date.desc',
-            'limit': limit * 10  # 後で絞り込むため多めに取得
-        }
-
-        result = await db_manager.get_market_amount_data(params)
+        # 新しい専用メソッドを使用して、全期間からユニークな銘柄を取得
+        result = await db_manager.get_unique_bonds(limit=limit, query=query)
 
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["error"])
 
-        # 銘柄コードでユニーク化（最新日付のデータを使用）
-        bonds_dict = {}
-        for row in result["data"]:
-            bond_code = row['bond_code']
-            if bond_code not in bonds_dict:
-                bonds_dict[bond_code] = BondSearchItem(
-                    bond_code=bond_code,
-                    bond_name=row.get('bond_name', f"Bond {bond_code}"),
-                    due_date=row.get('due_date', "N/A"),
-                    latest_market_amount=float(row['market_amount']),
-                    latest_trade_date=row['trade_date']
-                )
-
-        bonds_list = list(bonds_dict.values())[:limit]
+        bonds_list = [
+            BondSearchItem(
+                bond_code=row['bond_code'],
+                bond_name=row.get('bond_name') or f"Bond {row['bond_code']}",
+                due_date=row.get('due_date') or "N/A",
+                latest_market_amount=float(row['latest_market_amount']),
+                latest_trade_date=row['latest_trade_date']
+            )
+            for row in result["data"]
+        ]
 
         return BondSearchResponse(
             bonds=bonds_list,

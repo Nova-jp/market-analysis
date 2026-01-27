@@ -240,6 +240,46 @@ class DatabaseManager:
             logger.error(f"get_market_amount_data error: {e}")
             return {"success": False, "error": str(e)}
 
+    async def get_unique_bonds(self, limit: int = 100, query: Optional[str] = None) -> Dict[str, Any]:
+        """
+        全期間からユニークな銘柄一覧を取得（最新の属性を付随）
+        """
+        try:
+            where_clause = ""
+            query_params = {"limit": limit}
+            if query:
+                where_clause = "WHERE m.bond_code LIKE :query OR b.bond_name LIKE :query"
+                query_params["query"] = f"%{query}%"
+
+            # 各銘柄の最新取引日を取得し、その日のデータをJOINする
+            sql = f"""
+                WITH latest_dates AS (
+                    SELECT bond_code, MAX(trade_date) as max_date
+                    FROM bond_market_amount
+                    GROUP BY bond_code
+                )
+                SELECT 
+                    m.bond_code, m.trade_date as latest_trade_date, m.market_amount as latest_market_amount,
+                    b.bond_name, b.due_date
+                FROM bond_market_amount m
+                JOIN latest_dates ld ON m.bond_code = ld.bond_code AND m.trade_date = ld.max_date
+                LEFT JOIN bond_data b ON m.trade_date = b.trade_date AND m.bond_code = b.bond_code
+                {where_clause}
+                ORDER BY b.due_date DESC, m.bond_code ASC
+                LIMIT :limit
+            """
+            
+            async with AsyncSessionLocal() as session:
+                stmt = text(sql)
+                result = await session.execute(stmt, query_params)
+                data = [dict(row._mapping) for row in result]
+                data = self._convert_types(data)
+                return {"success": True, "data": data}
+
+        except Exception as e:
+            logger.error(f"get_unique_bonds error: {e}")
+            return {"success": False, "error": str(e)}
+
     async def get_bond_spreads(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         ASW (Asset Swap Spread) データを取得する専用メソッド
