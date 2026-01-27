@@ -114,15 +114,21 @@ class BondAuctionWebCollector:
 
                 # 債券名と回号を抽出
                 bond_cell = cells[1].get_text(strip=True)
+                
+                is_liquidity = '流動性供給入札' in bond_cell
 
-                # 回号を抽出（例: "10年利付国債(第376回)"）
-                bond_match = re.search(r'(.+?)[（\(]第?(\d+)回[）\)]', bond_cell)
-                if not bond_match:
-                    logger.warning(f"回号が抽出できません: {bond_cell}")
-                    continue
+                if is_liquidity:
+                    bond_name = "流動性供給入札"
+                    issue_number = 0  # 流動性は回号がない（または入札自体の回号だがDBには入れない）
+                else:
+                    # 回号を抽出（例: "10年利付国債(第376回)"）
+                    bond_match = re.search(r'(.+?)[（\(]第?(\d+)回[）\)]', bond_cell)
+                    if not bond_match:
+                        logger.warning(f"回号が抽出できません: {bond_cell}")
+                        continue
 
-                bond_name = bond_match.group(1).strip()
-                issue_number = int(bond_match.group(2))
+                    bond_name = bond_match.group(1).strip()
+                    issue_number = int(bond_match.group(2))
 
                 # 入札発行URL（offer）と入札結果URL（resul）を抽出
                 offer_url = None
@@ -153,11 +159,90 @@ class BondAuctionWebCollector:
                         'offer_url': offer_url,
                         'result_urls': result_links,
                         'is_tb': is_tb,  # TB判定フラグ
-                        'is_gx': is_gx   # GX債判定フラグ
+                        'is_gx': is_gx,   # GX債判定フラグ
+                        'is_liquidity': is_liquidity # 流動性判定フラグ
                     })
                     logger.info(f"入札予定検出: {bond_name} 第{issue_number}回")
 
         return schedules
+
+    def parse_liquidity_details(self, html: str, url: str) -> List[Dict]:
+        """
+        流動性供給入札の詳細ページ（銘柄ごとの落札額）を解析
+
+        Args:
+            html: 詳細ページのHTML
+            url: URL
+
+        Returns:
+            銘柄ごとのデータのリスト
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        results = []
+        
+        tables = soup.find_all('table')
+        
+        # 債券名からコードへの簡易マッピング（省略形用）
+        # 流動性の表では「10年債」「20年債」のように書かれることが多い
+        short_name_mapping = {
+            '2年債': '0042',
+            '5年債': '0045',
+            '10年債': '0067',
+            '20年債': '0069',
+            '30年債': '0068',
+            '40年債': '0054'
+        }
+
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows:
+                cols = row.find_all(['td', 'th'])
+                texts = [c.get_text(strip=True) for c in cols]
+                
+                # 最低3列（銘柄、回号、金額）必要
+                if len(texts) < 3:
+                    continue
+                    
+                bond_type_str = texts[0]
+                issue_str = texts[1]
+                amount_str = texts[2]
+                
+                # ヘッダー行スキップ
+                if '銘柄' in bond_type_str or '回号' in issue_str:
+                    continue
+                    
+                # 数値チェック（回号と金額が数値であることを確認）
+                if not (re.search(r'\d+', issue_str) and re.search(r'\d+', amount_str)):
+                    continue
+                
+                # 銘柄コード生成
+                type_code = short_name_mapping.get(bond_type_str)
+                if not type_code:
+                    # マッピングにない場合はログを出してスキップ
+                    continue
+                    
+                try:
+                    issue_num = int(re.sub(r'\D', '', issue_str)) # 数字のみ抽出
+                    bond_code = f'{issue_num:05d}{type_code}'
+                    
+                    # 金額パース: "10" などの数字のみの場合は億円単位とみなす
+                    if re.match(r'^\d+$', amount_str.replace(',', '')):
+                        amount = float(amount_str.replace(',', ''))
+                    else:
+                        amount = self._parse_amount(amount_str, as_float=True)
+                    
+                    results.append({
+                        'bond_code': bond_code,
+                        'issue_number': issue_num,
+                        'allocated_amount': amount,
+                        'total_amount': amount, # 流動性は発行=落札とみなす
+                        'bond_name': f"{bond_type_str.replace('債', '利付国債')}", # 簡易的な名称復元
+                    })
+                except Exception as e:
+                    logger.warning(f"流動性詳細パースエラー ({row}): {e}")
+                    continue
+                    
+        return results
 
     def fetch_auction_result(self, url: str, is_tb: bool = False, is_gx: bool = False) -> Optional[Dict]:
         """
@@ -482,6 +567,52 @@ class BondAuctionWebCollector:
         all_results = []
 
         for schedule in schedules:
+            is_liquidity = schedule.get('is_liquidity', False)
+            
+            # --- 流動性供給入札の処理 ---
+            if is_liquidity:
+                logger.info(f"流動性供給入札の処理開始: {schedule['bond_name']}")
+                
+                # 詳細URL (a.htm) を探す
+                detail_url = None
+                for url in schedule['result_urls']:
+                    if 'a.htm' in url:
+                        detail_url = url
+                        break
+                
+                if not detail_url:
+                    logger.warning("流動性供給入札の詳細URL(a.htm)が見つかりません")
+                    continue
+                    
+                # 詳細ページ取得・パース
+                try:
+                    response = self.session.get(detail_url, timeout=30)
+                    response.encoding = response.apparent_encoding
+                    response.raise_for_status()
+                    
+                    liquidity_records = self.parse_liquidity_details(response.text, detail_url)
+                    
+                    # 共通フィールド付与
+                    for record in liquidity_records:
+                        record['auction_date'] = schedule['date']
+                        # その他必須フィールドをNoneで埋める
+                        for key in ['coupon_rate', 'issue_date', 'maturity_date', 
+                                    'planned_amount', 'offered_amount', 'lowest_price', 
+                                    'highest_yield', 'average_price', 'average_yield',
+                                    'type1_noncompetitive', 'type2_noncompetitive']:
+                            record[key] = None
+                            
+                        all_results.append(record)
+                        
+                    logger.info(f"流動性供給入札: {len(liquidity_records)}件の銘柄データを取得")
+                    
+                except Exception as e:
+                    logger.error(f"流動性供給入札データ取得エラー: {e}")
+                
+                continue
+            
+            # --- 通常の入札処理 ---
+            
             bond_code = self.generate_bond_code(
                 schedule['bond_name'],
                 schedule['issue_number']
