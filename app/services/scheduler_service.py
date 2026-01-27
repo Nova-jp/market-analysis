@@ -4,14 +4,20 @@
 """
 import logging
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, date
 import time
+import calendar
 
 from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
+from data.collectors.boj.holdings_collector import BOJHoldingsCollector
+from data.collectors.mof.bond_auction_web_collector import BondAuctionWebCollector
 import jpholiday
 
 logger = logging.getLogger(__name__)
+
+# JST定義
+JST = timezone(timedelta(hours=9))
 
 
 class SchedulerService:
@@ -23,6 +29,8 @@ class SchedulerService:
     def __init__(self):
         self.processor = BondDataProcessor()
         self.db_manager = DatabaseManager()
+        self.boj_collector = BOJHoldingsCollector(delay_seconds=2.0)
+        self.mof_collector = BondAuctionWebCollector()
         self.date_validation_warning = None  # 日付検証の警告メッセージ
 
     def get_target_date(self) -> str:
@@ -32,7 +40,9 @@ class SchedulerService:
         Returns:
             YYYY-MM-DD形式の日付文字列
         """
-        target_date = datetime.now() + timedelta(days=1)
+        # JSTで現在時刻を取得
+        now_jst = datetime.now(JST)
+        target_date = now_jst + timedelta(days=1)
 
         for _ in range(10):
             if target_date.weekday() < 5 and not jpholiday.is_holiday(target_date.date()):
@@ -48,46 +58,63 @@ class SchedulerService:
 
             target_date += timedelta(days=1)
 
-        fallback = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        fallback = (now_jst + timedelta(days=1)).strftime('%Y-%m-%d')
         logger.warning(f"Could not find weekday, using fallback: {fallback}")
         return fallback
 
     def collect_data(self) -> Dict[str, Any]:
         """
-        日次データ収集を実行
+        日次データ収集を実行 (JSDA, MOF, BOJ)
 
         Returns:
             実行結果の辞書（status, message, records_saved等）
         """
         try:
             logger.info("=== Starting daily data collection ===")
+            results = {
+                "status": "success",
+                "message": "Daily collection completed",
+                "details": {}
+            }
 
+            # 1. JSDA Collection
             target_date_str = self.get_target_date()
-            saved_count = self._collect_single_day(target_date_str)
+            jsda_saved = self._collect_single_day(target_date_str)
+            
+            jsda_status = "success"
+            jsda_msg = f"Saved {jsda_saved} records"
+            if jsda_saved < 0:
+                jsda_status = "error"
+                jsda_msg = "Collection failed"
+                results["status"] = "error" # Mark overall status as error if JSDA fails
+            elif jsda_saved == 0:
+                jsda_msg = "No data available (possibly holiday)"
 
-            if saved_count > 0:
-                logger.info(f"Successfully collected {saved_count} records")
-                return {
-                    "status": "success",
-                    "message": f"Successfully collected data for {target_date_str}",
-                    "target_date": target_date_str,
-                    "records_saved": saved_count
-                }
-            elif saved_count == 0:
-                logger.info("No data available (possibly a holiday)")
-                return {
-                    "status": "success",
-                    "message": f"No data available for {target_date_str}",
-                    "target_date": target_date_str,
-                    "records_saved": 0
-                }
-            else:
-                logger.error("Data collection failed")
-                return {
-                    "status": "error",
-                    "message": "Data collection failed",
-                    "target_date": target_date_str
-                }
+            results["details"]["jsda"] = {
+                "status": jsda_status,
+                "message": jsda_msg,
+                "count": jsda_saved,
+                "target_date": target_date_str
+            }
+
+            # 2. MOF Collection
+            # Refactored to use the collector's built-in sync method
+            mof_success = self.mof_collector.sync_with_database()
+            results["details"]["mof"] = {
+                "status": "success" if mof_success else "warning", 
+                "message": "Completed" if mof_success else "Failed with error"
+            }
+
+            # 3. BOJ Collection
+            # Refactored to use the collector's built-in sync method
+            boj_success = self.boj_collector.sync_with_database()
+            results["details"]["boj"] = {
+                "status": "success" if boj_success else "warning",
+                "message": "Completed" if boj_success else "Failed with error"
+            }
+
+            logger.info(f"Collection finished. Results: {results}")
+            return results
 
         except Exception as e:
             error_msg = f"Unexpected error during data collection: {str(e)}"

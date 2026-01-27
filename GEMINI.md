@@ -1,3 +1,23 @@
+## 🤖 エージェント行動指針 (厳守)
+
+### 1. コード修正・ファイル操作のプロセス
+- **「提案」と「実行」の分離**:
+  コードの修正、ファイルの作成・削除を行う際は、必ず**実行前に**変更内容を自然言語で提示し、ユーザーの承認を得ること。
+- **即時のツール呼び出し禁止**:
+  解決策がわかっても、`replace` や `write_file` 等のツールをいきなり呼び出してはならない。
+- **承認の定義**:
+  ツール実行時のシステム確認画面は「事前の承認」とはみなさない。必ず会話の中で「その内容で進めてください」等の合意を得ること。
+
+### 2. Python実行環境の制約
+- **仮想環境の強制利用**:
+  Pythonスクリプトを実行する際は、システムグローバルの `python` や `python3` コマンドを**絶対に使用しない**。
+- **実行パスの指定**:
+  必ずプロジェクトルートの仮想環境バイナリを直接指定すること。
+  - ⭕️ `./venv/bin/python script.py`
+  - ❌ `python script.py`
+- **理由**:
+  必要なライブラリは仮想環境 (`venv`) にのみインストールされており、システムのPythonを使用すると `ModuleNotFoundError` が発生するため。
+
 ## 📡 データ収集・外部アクセス方針
 
 ### 共通ルール
@@ -97,4 +117,33 @@
 - **定義**: `誤差 = 実測利回り - PCAによる復元利回り`。
 - **用途**: 銘柄（Maturity）ごとの誤差を散布図でプロット。特定日の市場の「歪み」を検出するために使用。
 
-### 4. 日次運用プロセス
+### 4. Webアプリケーション構成 & デプロイ
+
+#### 1. アーキテクチャ
+- **Frontend**: Next.js (TypeScript) - `frontend/` ディレクトリ。
+- **Backend**: FastAPI (Python) - API提供およびフロントエンドの静的ファイル配信。
+- **配信方式**: 
+  - Next.js を静的エクスポート (`output: 'export'`)。
+  - FastAPI が `static/dist/` ディレクトリから HTML/JS/CSS を配信。
+  - ルーティングは `app/web/main.py` で定義。
+
+#### 2. 主要ディレクトリ & ページ構成
+- **`frontend/app/`**: App Router によるページ定義
+  - `yield-curve/`: 国債利回りカーブ比較（JGB）
+  - `asw/`: ASW (Asset Swap Spread) 分析・比較
+  - `pca/`: 主成分分析（TONA OIS / JGB）
+  - `market-amount/`: 市中残存額分析
+- **`frontend/components/`**: 再利用可能なUIコンポーネント
+  - `YieldCurveChart.tsx`: 利回りカーブ用チャート
+  - `ASWChart.tsx`: ASWスプレッド用チャート
+
+#### 3. ビルド & デプロイ (Cloud Run)
+- **Multi-stage Build**:
+  - `Stage 1 (node:20)`: フロントエンドのビルド。React 19/Next 16 対応のため Node 20 以上が必須。
+  - `Stage 2 (python:3.11-slim)`: バックエンド実行環境。
+- **注意点**: 
+  - `.dockerignore` に `frontend/` を含める必要がある（ビルドにソースが必要なため）。
+  - `next.config.ts` で `eslint` / `typescript` のビルド時エラーを無視する設定を入れている。
+- **デプロイコマンド**: `python3 scripts/deploy.py`
+
+### 5. 日次運用プロセス

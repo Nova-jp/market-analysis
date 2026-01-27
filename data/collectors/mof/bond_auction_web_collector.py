@@ -7,9 +7,11 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import calendar
 from typing import Dict, List, Optional
 import logging
+from data.utils.database_manager import DatabaseManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,6 +47,7 @@ class BondAuctionWebCollector:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
         })
+        self.db_manager = DatabaseManager()
 
     def fetch_calendar_page(self, year: int, month: int) -> Optional[str]:
         """
@@ -573,12 +576,25 @@ class BondAuctionWebCollector:
             if is_liquidity:
                 logger.info(f"流動性供給入札の処理開始: {schedule['bond_name']}")
                 
-                # 詳細URL (a.htm) を探す
+                # 詳細URL (a.htm) と サマリーURL (aなし) を探す
                 detail_url = None
+                summary_url = None
                 for url in schedule['result_urls']:
                     if 'a.htm' in url:
                         detail_url = url
-                        break
+                    else:
+                        summary_url = url
+                
+                # サマリーページから発行日を取得
+                issue_date = None
+                if summary_url:
+                    try:
+                        summary_res = self.fetch_auction_result(summary_url)
+                        if summary_res:
+                            issue_date = summary_res.get('issue_date')
+                            logger.info(f"サマリーから発行日を取得: {issue_date}")
+                    except Exception as e:
+                        logger.warning(f"サマリー取得失敗: {e}")
                 
                 if not detail_url:
                     logger.warning("流動性供給入札の詳細URL(a.htm)が見つかりません")
@@ -595,12 +611,18 @@ class BondAuctionWebCollector:
                     # 共通フィールド付与
                     for record in liquidity_records:
                         record['auction_date'] = schedule['date']
+                        record['issue_date'] = issue_date
+                        
                         # その他必須フィールドをNoneで埋める
-                        for key in ['coupon_rate', 'issue_date', 'maturity_date', 
+                        for key in ['coupon_rate', 'maturity_date', 
                                     'planned_amount', 'offered_amount', 'lowest_price', 
                                     'highest_yield', 'average_price', 'average_yield',
                                     'type1_noncompetitive', 'type2_noncompetitive']:
                             record[key] = None
+                        
+                        # DBに存在しないカラムを削除
+                        if 'bond_name' in record:
+                            del record['bond_name']
                             
                         all_results.append(record)
                         
@@ -691,6 +713,105 @@ class BondAuctionWebCollector:
                     logger.warning(f"表面利率が取得できませんでした: {bond_code}")
 
         return all_results
+
+    def sync_with_database(self) -> bool:
+        """
+        DBの最新状態を確認し、未取得の新しいデータがあれば収集して保存する
+
+        Returns:
+            bool: 処理が正常に完了した場合True
+        """
+        try:
+            logger.info("--- MOF Auction Data Synchronization Started ---")
+            
+            # DBの最新日付取得
+            query = "SELECT MAX(auction_date) FROM bond_auction"
+            rows = self.db_manager.execute_query(query)
+            latest_date_db = rows[0][0] if rows and rows[0][0] else None
+            
+            today = date.today()
+            
+            if not latest_date_db:
+                # DBが空の場合は過去30日分を確認
+                start_date = today - timedelta(days=30)
+                logger.info("No auction data in DB. Checking last 30 days.")
+            else:
+                # DBの最終日の翌日から確認
+                if isinstance(latest_date_db, str):
+                    latest_date_db = date.fromisoformat(latest_date_db)
+                start_date = latest_date_db + timedelta(days=1)
+            
+            end_date = today
+            
+            if start_date > end_date:
+                logger.info(f"Auction data is up to date (Latest: {latest_date_db})")
+                return True
+                
+            logger.info(f"Checking period: {start_date} to {end_date}")
+            
+            current_date = start_date
+            processed_months = set()
+            total_saved = 0
+            
+            while current_date <= end_date:
+                year = current_date.year
+                month = current_date.month
+                
+                if (year, month) in processed_months:
+                    current_date += timedelta(days=1)
+                    continue
+                
+                processed_months.add((year, month))
+                
+                html = self.fetch_calendar_page(year, month)
+                if not html:
+                    logger.warning(f"Failed to fetch calendar for {year}-{month}")
+                    if month == 12:
+                        current_date = date(year + 1, 1, 1)
+                    else:
+                        current_date = date(year, month + 1, 1)
+                    continue
+
+                _, last_day = calendar.monthrange(year, month)
+                
+                for day in range(1, last_day + 1):
+                    check_date = date(year, month, day)
+                    if check_date < start_date:
+                        continue
+                    if check_date > end_date:
+                        break
+                    
+                    schedules = self.extract_auction_schedule(html, check_date)
+                    
+                    if schedules:
+                        logger.info(f"Auction detected on {check_date}: {[s['bond_name'] for s in schedules]}")
+                        results = self.collect_auction_data(check_date)
+                        
+                        if results:
+                            # Normalize dates for JSON serialization if needed
+                            for r in results:
+                                for key in ['auction_date', 'issue_date', 'maturity_date']:
+                                    if key in r and hasattr(r[key], 'isoformat'):
+                                        r[key] = r[key].isoformat()
+                                if 'source_url' in r: del r['source_url']
+
+                            saved = self.db_manager.batch_insert_data(results, table_name='bond_auction')
+                            total_saved += saved
+                            logger.info(f"  -> Saved {saved} records")
+                        else:
+                            logger.info(f"  -> No results published yet")
+                
+                if month == 12:
+                    current_date = date(year + 1, 1, 1)
+                else:
+                    current_date = date(year, month + 1, 1)
+
+            logger.info(f"--- MOF Data Synchronization Completed (New: {total_saved}) ---")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in MOF synchronization: {e}")
+            return False
 
 
 if __name__ == '__main__':

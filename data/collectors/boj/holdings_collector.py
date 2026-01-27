@@ -489,6 +489,76 @@ class BOJHoldingsCollector:
         self.logger.info(f"=== 収集完了: {results['total_files']}ファイル, {results['total_records']}レコード ===")
         return results
 
+    def sync_with_database(self) -> bool:
+        """
+        DBの最新状態を確認し、未取得の新しいデータがあれば収集して保存する
+
+        Returns:
+            bool: 処理が正常に完了した場合True
+        """
+        try:
+            self.logger.info("--- BOJ Holdings Data Synchronization Started ---")
+            
+            # DBの最新日付取得
+            query = "SELECT MAX(data_date) FROM boj_holdings"
+            rows = self.db_manager.execute_query(query)
+            latest_date_db = rows[0][0] if rows and rows[0][0] else None
+            
+            self.logger.info(f"Latest BOJ date in DB: {latest_date_db}")
+
+            # JSTでの現在日時
+            jst = datetime.now().astimezone().tzinfo # 簡易的にシステムローカルまたはUTCを使うが、このクラスはdatetime.now()を使っている
+            # より安全に実装するため、timezoneを意識せずにdatetime.now()を使う（システム時間に依存）
+            current_date = datetime.now()
+            current_year = current_date.year
+            
+            # チェック対象年: 今年。1月なら去年もチェック
+            years_to_check = [current_year]
+            if current_date.month == 1:
+                years_to_check.append(current_year - 1)
+            
+            total_new_files = 0
+            
+            for year in years_to_check:
+                file_links = self.get_file_links_for_year(year)
+                
+                new_files = []
+                for link in file_links:
+                    file_date = link.get('date_str')
+                    if not file_date:
+                        continue
+                        
+                    is_new = False
+                    if latest_date_db is None:
+                        is_new = True
+                    else:
+                        # 文字列比較 (YYYY-MM-DD)
+                        if str(file_date) > str(latest_date_db):
+                            is_new = True
+                            
+                    if is_new:
+                        new_files.append(link)
+                
+                if new_files:
+                    self.logger.info(f"{year}: Found {len(new_files)} new files")
+                    for file_info in new_files:
+                        self.logger.info(f"Processing: {file_info['date_str']} ({file_info['url']})")
+                        records = self.download_and_parse(file_info)
+                        if records:
+                            saved = self.save_to_database(records)
+                            self.logger.info(f"  -> Saved {saved} records")
+                            total_new_files += 1
+                        time.sleep(self.delay_seconds)
+                else:
+                    self.logger.info(f"{year}: No new files")
+            
+            self.logger.info(f"--- BOJ Data Synchronization Completed (New files: {total_new_files}) ---")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error during BOJ synchronization: {e}")
+            return False
+
 
 if __name__ == '__main__':
     # テスト実行
