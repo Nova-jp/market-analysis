@@ -12,6 +12,7 @@ from data.processors.bond_data_processor import BondDataProcessor
 from data.utils.database_manager import DatabaseManager
 from data.collectors.boj.holdings_collector import BOJHoldingsCollector
 from data.collectors.mof.bond_auction_web_collector import BondAuctionWebCollector
+from app.services.jsda_volume_service import JSDAVolumeService
 import jpholiday
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class SchedulerService:
         self.db_manager = DatabaseManager()
         self.boj_collector = BOJHoldingsCollector(delay_seconds=2.0)
         self.mof_collector = BondAuctionWebCollector()
+        self.jsda_volume_service = JSDAVolumeService()
         self.date_validation_warning = None  # 日付検証の警告メッセージ
 
     def get_target_date(self) -> str:
@@ -112,6 +114,13 @@ class SchedulerService:
                 "status": "success" if boj_success else "warning",
                 "message": "Completed" if boj_success else "Failed with error"
             }
+
+            # 4. JSDA Volume Collection (Monthly Statistics - Polling)
+            # Only run check around the 20th-26th of each month to save resources, 
+            # or just run it daily as it's lightweight.
+            # Here we run it daily as the check is lightweight.
+            jsda_volume_result = self.jsda_volume_service.sync_with_jsda()
+            results["details"]["jsda_volume"] = jsda_volume_result
 
             logger.info(f"Collection finished. Results: {results}")
             return results
