@@ -5,10 +5,9 @@ import requests
 import io
 import csv
 import logging
-import psycopg2
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any, List
-from app.core.config import settings
+from data.utils.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +15,7 @@ class InternationalTransactionsCollector:
     DATA_URL = "https://www.mof.go.jp/policy/international_policy/reference/itn_transactions_in_securities/week.csv"
 
     def __init__(self):
-        # データベース接続設定は環境変数から取得（設定ファイル経由）
-        self.db_url = settings.DATABASE_URL
-        # あるいは直接環境変数を参照することも可能だが、
-        # ここではスクリプトと同じロジックを使うため、実行時に環境変数を参照する形にする
-        # または、DatabaseManager を使うのがベストプラクティス
-        pass
+        self.db = DatabaseManager()
 
     def collect(self) -> Dict[str, Any]:
         """
@@ -41,15 +35,13 @@ class InternationalTransactionsCollector:
                 return {"status": "warning", "message": "No data found in CSV"}
             
             # 3. DB保存
-            inserted, updated = self._save_to_db(data_rows)
+            processed_count = self._save_to_db(data_rows)
             
             return {
                 "status": "success",
-                "message": f"Processed {len(data_rows)} rows",
+                "message": f"Processed {processed_count} rows",
                 "details": {
-                    "total": len(data_rows),
-                    "inserted": inserted, # Note: Current logic doesn't distinguish insert/update count strictly
-                    "updated": updated
+                    "total_processed": processed_count
                 }
             }
 
@@ -164,6 +156,7 @@ class InternationalTransactionsCollector:
                         'inward_short_term_disposition': self._parse_value(row[20]),
                         'inward_short_term_net': self._parse_value(row[21]),
                         'inward_total_net': self._parse_value(row[22]),
+                        'updated_at': datetime.now() # UPSERT用
                     }
                     data_rows.append(record)
                 except Exception as e:
@@ -172,94 +165,16 @@ class InternationalTransactionsCollector:
                     
         return data_rows
 
-    def _save_to_db(self, data_rows: List[Dict[str, Any]]) -> Tuple[int, int]:
-        # ここでは環境変数ではなく、アプリのDatabaseManagerを使うべきだが、
-        # 取り急ぎpsycopg2で直接接続するロジックを維持（依存関係を減らすため）
-        # ただし、appコンテキスト内なので settings.DATABASE_URL をパースして使う
+    def _save_to_db(self, data_rows: List[Dict[str, Any]]) -> int:
+        # 更新対象のカラムリストを作成 (start_date以外全て)
+        if not data_rows:
+            return 0
+            
+        update_columns = [k for k in data_rows[0].keys() if k != 'start_date']
         
-        # settings.DATABASE_URL が SQLAlchemy用のURL (postgres://...) の場合があるため
-        # 簡易的に環境変数から再構築するか、既存のロジックを流用する
-        import os
-        
-        # Cloud Run環境などでは環境変数でDB接続情報が渡されることを想定
-        db_host = os.getenv('DB_HOST') or os.getenv('CLOUD_SQL_HOST')
-        db_port = os.getenv('DB_PORT', '5432')
-        db_name = os.getenv('DB_NAME') or os.getenv('CLOUD_SQL_DATABASE')
-        db_user = os.getenv('DB_USER') or os.getenv('CLOUD_SQL_USER')
-        db_password = os.getenv('DB_PASSWORD') or os.getenv('CLOUD_SQL_PASSWORD')
-
-        if not db_host:
-             # Fallback: try to parse settings.DATABASE_URL if available
-             # ここでは簡易的にエラーとする
-             raise ValueError("DB connection info not found in env vars")
-
-        conn = psycopg2.connect(
-            host=db_host,
-            port=db_port,
-            database=db_name,
-            user=db_user,
-            password=db_password
+        return self.db.batch_insert_data(
+            data_rows,
+            table_name='mof_international_transactions',
+            conflict_target='start_date',
+            update_columns=update_columns
         )
-        conn.autocommit = True
-        
-        try:
-            with conn.cursor() as cursor:
-                insert_sql = """
-                    INSERT INTO mof_international_transactions (
-                        start_date, end_date,
-                        outward_equity_acquisition, outward_equity_disposition, outward_equity_net,
-                        outward_long_term_acquisition, outward_long_term_disposition, outward_long_term_net,
-                        outward_subtotal_net,
-                        outward_short_term_acquisition, outward_short_term_disposition, outward_short_term_net,
-                        outward_total_net,
-                        inward_equity_acquisition, inward_equity_disposition, inward_equity_net,
-                        inward_long_term_acquisition, inward_long_term_disposition, inward_long_term_net,
-                        inward_subtotal_net,
-                        inward_short_term_acquisition, inward_short_term_disposition, inward_short_term_net,
-                        inward_total_net,
-                        updated_at
-                    ) VALUES (
-                        %(start_date)s, %(end_date)s,
-                        %(outward_equity_acquisition)s, %(outward_equity_disposition)s, %(outward_equity_net)s,
-                        %(outward_long_term_acquisition)s, %(outward_long_term_disposition)s, %(outward_long_term_net)s,
-                        %(outward_subtotal_net)s,
-                        %(outward_short_term_acquisition)s, %(outward_short_term_disposition)s, %(outward_short_term_net)s,
-                        %(outward_total_net)s,
-                        %(inward_equity_acquisition)s, %(inward_equity_disposition)s, %(inward_equity_net)s,
-                        %(inward_long_term_acquisition)s, %(inward_long_term_disposition)s, %(inward_long_term_net)s,
-                        %(inward_subtotal_net)s,
-                        %(inward_short_term_acquisition)s, %(inward_short_term_disposition)s, %(inward_short_term_net)s,
-                        %(inward_total_net)s,
-                        NOW()
-                    )
-                    ON CONFLICT (start_date) DO UPDATE SET
-                        end_date = EXCLUDED.end_date,
-                        outward_equity_acquisition = EXCLUDED.outward_equity_acquisition,
-                        outward_equity_disposition = EXCLUDED.outward_equity_disposition,
-                        outward_equity_net = EXCLUDED.outward_equity_net,
-                        outward_long_term_acquisition = EXCLUDED.outward_long_term_acquisition,
-                        outward_long_term_disposition = EXCLUDED.outward_long_term_disposition,
-                        outward_long_term_net = EXCLUDED.outward_long_term_net,
-                        outward_subtotal_net = EXCLUDED.outward_subtotal_net,
-                        outward_short_term_acquisition = EXCLUDED.outward_short_term_acquisition,
-                        outward_short_term_disposition = EXCLUDED.outward_short_term_disposition,
-                        outward_short_term_net = EXCLUDED.outward_short_term_net,
-                        outward_total_net = EXCLUDED.outward_total_net,
-                        inward_equity_acquisition = EXCLUDED.inward_equity_acquisition,
-                        inward_equity_disposition = EXCLUDED.inward_equity_disposition,
-                        inward_equity_net = EXCLUDED.inward_equity_net,
-                        inward_long_term_acquisition = EXCLUDED.inward_long_term_acquisition,
-                        inward_long_term_disposition = EXCLUDED.inward_long_term_disposition,
-                        inward_long_term_net = EXCLUDED.inward_long_term_net,
-                        inward_subtotal_net = EXCLUDED.inward_subtotal_net,
-                        inward_short_term_acquisition = EXCLUDED.inward_short_term_acquisition,
-                        inward_short_term_disposition = EXCLUDED.inward_short_term_disposition,
-                        inward_short_term_net = EXCLUDED.inward_short_term_net,
-                        inward_total_net = EXCLUDED.inward_total_net,
-                        updated_at = NOW();
-                """
-                cursor.executemany(insert_sql, data_rows)
-                
-            return len(data_rows), 0 # 簡易的に全てinserted扱い
-        finally:
-            conn.close()

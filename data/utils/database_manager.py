@@ -63,15 +63,46 @@ class DatabaseManager:
     
     def batch_insert_data(self, data_list: List[Dict[Any, Any]], 
                          table_name: str = 'bond_data', 
-                         batch_size: int = 100) -> int:
-        """バッチでデータを挿入"""
+                         batch_size: int = 100,
+                         conflict_target: str = None,
+                         update_columns: List[str] = None) -> int:
+        """
+        バッチでデータを挿入 (UPSERT対応)
+        
+        Args:
+            data_list: 挿入するデータのリスト
+            table_name: テーブル名
+            batch_size: バッチサイズ
+            conflict_target: 競合判定カラム (例: 'id' や 'col1, col2')
+            update_columns: UPSERT時に更新するカラム名のリスト
+            
+        Returns:
+            処理したレコード数
+        """
         if not data_list:
             return 0
         
         # 最初のレコードからカラム名を取得
-        columns = data_list[0].keys()
-        query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))}) " \
-                f"ON CONFLICT DO NOTHING"  # 重複は無視
+        columns = list(data_list[0].keys())
+        placeholders = ', '.join(['%s'] * len(columns))
+        col_names = ', '.join(columns)
+        
+        base_query = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+        
+        if conflict_target:
+            # conflict_targetが括弧で囲まれていない場合は囲む
+            target = conflict_target if conflict_target.startswith('(') else f"({conflict_target})"
+            
+            if update_columns:
+                # DO UPDATE
+                updates = ', '.join([f"{col} = EXCLUDED.{col}" for col in update_columns])
+                query = f"{base_query} ON CONFLICT {target} DO UPDATE SET {updates}"
+            else:
+                # DO NOTHING with target
+                query = f"{base_query} ON CONFLICT {target} DO NOTHING"
+        else:
+            # Default behavior (Legacy): ON CONFLICT DO NOTHING without target
+            query = f"{base_query} ON CONFLICT DO NOTHING"
         
         try:
             with self._get_connection() as conn:
