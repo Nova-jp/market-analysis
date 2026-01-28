@@ -17,6 +17,7 @@ import os
 from fastapi import APIRouter, HTTPException, Header, Request
 from datetime import datetime, date
 from typing import Optional
+from starlette.concurrency import run_in_threadpool
 
 from app.services.scheduler_service import SchedulerService
 from app.services.irs_scheduler_service import IRSSchedulerService
@@ -410,7 +411,7 @@ async def international_transactions_collection(
     try:
         from data.collectors.mof.international_transactions_collector import InternationalTransactionsCollector
         collector = InternationalTransactionsCollector()
-        result = collector.collect()
+        result = await run_in_threadpool(collector.collect)
 
         if result["status"] == "success":
             logger.info("International transactions data collection completed successfully")
