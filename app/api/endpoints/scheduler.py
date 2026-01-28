@@ -385,3 +385,47 @@ async def clear_pca_cache(
         logger.error(f"Error clearing PCA cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/api/scheduler/international-transactions-collection")
+async def international_transactions_collection(
+    request: Request,
+    x_cloudscheduler: Optional[str] = Header(None, alias="X-CloudScheduler"),
+    user_agent: Optional[str] = Header(None, alias="User-Agent")
+):
+    """
+    対内対外証券投資データ収集エンドポイント
+    Cloud Schedulerから毎週木曜日に複数回呼び出される（ポーリング用）
+    """
+    if not verify_cloud_scheduler_request(request, x_cloudscheduler, user_agent):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is only accessible by Cloud Scheduler"
+        )
+
+    logger.info("=" * 60)
+    logger.info("International Transactions data collection triggered by Cloud Scheduler")
+    logger.info(f"Timestamp: {datetime.now().isoformat()}")
+    logger.info("=" * 60)
+
+    try:
+        from data.collectors.mof.international_transactions_collector import InternationalTransactionsCollector
+        collector = InternationalTransactionsCollector()
+        result = collector.collect()
+
+        if result["status"] == "success":
+            logger.info("International transactions data collection completed successfully")
+            return result
+        elif result["status"] == "warning":
+            logger.warning(f"International transactions data collection warning: {result.get('message')}")
+            return result
+        else:
+            logger.error(f"International transactions data collection failed: {result.get('message')}")
+            raise HTTPException(status_code=500, detail=result.get("message"))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error in International Transactions collection: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)
+
