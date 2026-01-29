@@ -63,6 +63,9 @@ create_job() {
 
 # 2. Setup Jobs
 
+# Macro Economic Data Collection (Stock, FX, US Yields, CPI) - 07:00
+create_job "daily-macro-collection" "0 7 * * *" "/api/scheduler/macro-daily-collection" "Daily Macro Economic Data (Stock/FX/Yields) collection"
+
 # Daily Data Collection (JSDA) - 18:00
 create_job "daily-bond-collection" "0 18 * * *" "/api/scheduler/daily-collection" "Daily JSDA bond market data collection"
 

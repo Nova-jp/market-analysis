@@ -37,6 +37,21 @@ export interface QuickDatesResponse {
   month_ago?: string;
 }
 
+export interface ASWData {
+  maturity: number;
+  bond_code?: string;
+  bond_name: string;
+  bond_yield: number;
+  swap_rate: number;
+  asw: number;
+}
+
+export interface ASWCurveResponse {
+  date: string;
+  data: ASWData[];
+  error?: string;
+}
+
 // PCA Types
 export interface PCAComponent {
   pc_number: number;

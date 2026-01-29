@@ -304,19 +304,19 @@ export default function PCAPage() {
                     <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
                       <div className="text-sm font-bold text-slate-600 whitespace-nowrap flex items-center gap-2">
                         Target Date: 
-                        <span className="text-indigo-600 font-black ml-1">{selectedRecDate}</span>
                         {recLoading && <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />}
                       </div>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max={recDates.length - 1} 
-                        step="1" 
+                      <select
                         value={recDateIndex}
                         onChange={(e) => handleRecDateChange(Number(e.target.value))}
-                        className="w-32 md:w-48 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                        dir="ltr" 
-                      />
+                        className="bg-white border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5 font-mono font-bold"
+                      >
+                        {recDates.map((date, index) => (
+                          <option key={date} value={index}>
+                            {date}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
                 </div>

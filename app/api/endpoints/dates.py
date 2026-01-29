@@ -65,44 +65,20 @@ async def search_dates(
 
 
 @router.get("/api/quick-dates", response_model=QuickDatesResponse)
-
-
 async def get_quick_dates(
-
-
     table: str = Query("bond_data", description="参照テーブル (bond_data or bond_market_amount)")
-
-
 ):
-
-
     """
-
-
     クイック選択用の営業日を取得
-
-
     """
-
-
     try:
-
-
         # テーブル名検証
-
-
-        if table not in ["bond_data", "bond_market_amount"]:
-
-
+        if table not in ["bond_data", "bond_market_amount", "ASW_data"]:
             table = "bond_data"
-
-
-
-
 
         # ユニークな日付を効率的に取得するために直接SQLを実行
         # bond_dataは1日あたり数百行あるため、単純なlimit=100では過去の日付に到達しない
-        sql = f"SELECT DISTINCT trade_date FROM {table} ORDER BY trade_date DESC LIMIT 30"
+        sql = f'SELECT DISTINCT trade_date FROM "{table}" ORDER BY trade_date DESC LIMIT 30'
         
         # db_managerのsessionを使って実行
         from sqlalchemy import text
@@ -114,93 +90,33 @@ async def get_quick_dates(
 
         quick_dates = {}
 
-
-
-
-
         # インデックスベースで営業日を取得
-
-
         if len(unique_dates) > 0:
-
-
             quick_dates['latest'] = unique_dates[0]
 
-
-
-
-
         if len(unique_dates) > 1:
-
-
             quick_dates['previous'] = unique_dates[1]
 
-
-
-
-
         if len(unique_dates) > 5:
-
-
             quick_dates['five_days_ago'] = unique_dates[5]
 
-
-
-
-
         # 1ヶ月前の営業日を計算
-
-
         if unique_dates:
-
-
             try:
-
-
                 latest_dt = datetime.strptime(unique_dates[0], '%Y-%m-%d')
-
-
                 month_ago_target = latest_dt - timedelta(days=30)
-
-
                 target_str = month_ago_target.strftime('%Y-%m-%d')
 
-
-
-
-
                 # 1ヶ月前に最も近い過去の営業日を検索
-
-
                 for date in unique_dates:
-
-
                     if date <= target_str:
-
-
                         quick_dates['month_ago'] = date
-
-
                         break
-
-
             except ValueError:
-
-
                 pass
-
-
-
-
 
         return QuickDatesResponse(**quick_dates)
 
-
-
-
-
     except Exception as e:
-
-
         raise HTTPException(status_code=500, detail=str(e))
 

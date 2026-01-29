@@ -25,6 +25,13 @@ export default function Home() {
       color: 'bg-emerald-500',
     },
     {
+      title: 'ASW Analysis',
+      description: '国債のAsset Swap Spread (ASW) の期間構造と推移分析。',
+      href: '/asw',
+      icon: <BarChart3 className="w-6 h-6" />,
+      color: 'bg-rose-500',
+    },
+    {
       title: 'Private Analytics',
       description: 'フォワードカーブ計算と詳細なPCAバストレポ。',
       href: '/private',

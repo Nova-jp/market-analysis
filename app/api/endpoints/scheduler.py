@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from app.services.scheduler_service import SchedulerService
 from app.services.irs_scheduler_service import IRSSchedulerService
 from app.services.asw_scheduler_service import ASWSchedulerService
+from app.services.macro_scheduler_service import MacroSchedulerService
 from app.services.pca_service import PCAService
 
 router = APIRouter()
@@ -44,6 +45,7 @@ def get_calendar_collector():
 scheduler_service = SchedulerService()
 irs_scheduler_service = IRSSchedulerService()
 asw_scheduler_service = ASWSchedulerService()
+macro_scheduler_service = MacroSchedulerService()
 
 
 def verify_cloud_scheduler_request(
@@ -95,6 +97,49 @@ def verify_cloud_scheduler_request(
         f"X-CloudScheduler: {x_cloudscheduler}"
     )
     return False
+
+
+@router.post("/api/scheduler/macro-daily-collection")
+async def macro_daily_data_collection(
+    request: Request,
+    x_cloudscheduler: Optional[str] = Header(None, alias="X-CloudScheduler"),
+    user_agent: Optional[str] = Header(None, alias="User-Agent")
+):
+    """
+    マクロ経済データ(株価・為替・米国債・CPI)収集エンドポイント
+    Cloud Schedulerから毎日07:00に呼び出される
+    """
+    if not verify_cloud_scheduler_request(request, x_cloudscheduler, user_agent):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is only accessible by Cloud Scheduler"
+        )
+
+    logger.info("=" * 60)
+    logger.info("Macro daily data collection triggered by Cloud Scheduler")
+    logger.info(f"Timestamp: {datetime.now().isoformat()}")
+    logger.info("=" * 60)
+
+    try:
+        # スレッドプールで実行（外部通信を行うため非同期をブロックしないように）
+        result = await run_in_threadpool(macro_scheduler_service.collect_data)
+
+        if result["status"] == "success":
+            logger.info("Macro data collection completed successfully")
+            return result
+        elif result["status"] == "partial_success":
+            logger.warning(f"Macro data collection completed with warnings: {result.get('details')}")
+            return result
+        else:
+            logger.error(f"Macro data collection failed: {result.get('message')}")
+            raise HTTPException(status_code=500, detail=result.get("message"))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error in Macro collection: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.post("/api/scheduler/daily-collection")
