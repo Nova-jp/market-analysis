@@ -87,6 +87,19 @@ const ASWChart = ({ datasets, minMaturity = 0, maxMaturity = 40 }: ASWChartProps
     return point;
   });
 
+  // 3. 表示データの範囲に合わせてY軸のスケールを手動計算
+  const yValues = chartData.flatMap(point => 
+    datasets.map(ds => point[ds.date]).filter(v => v !== null && typeof v === 'number')
+  );
+  
+  let yDomain: [number | string, number | string] = ['auto', 'auto'];
+  if (yValues.length > 0) {
+    const min = Math.min(...yValues);
+    const max = Math.max(...yValues);
+    const padding = (max - min) * 0.1 || 0.01; // 10%のバッファ
+    yDomain = [Number((min - padding).toFixed(4)), Number((max + padding).toFixed(4))];
+  }
+
   return (
     <div className="h-[550px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -108,7 +121,7 @@ const ASWChart = ({ datasets, minMaturity = 0, maxMaturity = 40 }: ASWChartProps
           <YAxis 
             label={{ value: 'ASW (%)', angle: -90, position: 'insideLeft', offset: 0 }}
             tick={{ fontSize: 12 }}
-            domain={['auto', 'auto']}
+            domain={yDomain}
             stroke="#64748b"
           />
           <Tooltip content={<CustomTooltip />} />

@@ -33,7 +33,12 @@ const ScoreChart = ({ scores, componentsCount }: ScoreChartProps) => {
             tickFormatter={(date) => date.slice(5)} // MM-DD
             minTickGap={30}
           />
-          <YAxis label={{ value: 'Score', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 12 }} stroke="#64748b" />
+          <YAxis 
+            label={{ value: 'Score', angle: -90, position: 'insideLeft' }} 
+            tick={{ fontSize: 12 }} 
+            stroke="#64748b" 
+            domain={['auto', 'auto']}
+          />
           <Tooltip 
             content={({ active, payload, label }) => {
               if (active && payload && payload.length) {

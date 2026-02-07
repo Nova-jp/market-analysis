@@ -42,7 +42,12 @@ const LoadingsChart = ({ components, maturities }: LoadingsChartProps) => {
             label={{ value: 'Maturity (Years)', position: 'insideBottomRight', offset: -10 }}
             type="number"
           />
-          <YAxis label={{ value: 'Loading', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 12 }} stroke="#64748b" />
+          <YAxis 
+            label={{ value: 'Loading', angle: -90, position: 'insideLeft' }} 
+            tick={{ fontSize: 12 }} 
+            stroke="#64748b" 
+            domain={['auto', 'auto']}
+          />
           <Tooltip 
             content={({ active, payload, label }) => {
               if (active && payload && payload.length) {

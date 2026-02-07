@@ -142,6 +142,7 @@ const ReconstructionChart = ({ data }: ReconstructionChartProps) => {
               unit=" bps" 
               label={{ value: 'Reconstruction Error (bps)', angle: -90, position: 'insideLeft', offset: 0, fill: '#64748b' }}
               tick={{ fontSize: 12, fill: '#64748b' }}
+              domain={['auto', 'auto']}
             />
             <Tooltip 
               cursor={{ strokeDasharray: '3 3' }}
