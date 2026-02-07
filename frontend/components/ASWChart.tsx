@@ -65,7 +65,9 @@ const ASWChart = ({ datasets, minMaturity = 0, maxMaturity = 40 }: ASWChartProps
     });
   });
   
-  const sortedMaturities = Array.from(allMaturities).sort((a, b) => a - b);
+  const sortedMaturities = Array.from(allMaturities)
+    .filter(mat => mat >= minMaturity && mat <= maxMaturity)
+    .sort((a, b) => a - b);
 
   // 2. Recharts用のデータ構造に変換
   const chartData = sortedMaturities.map(mat => {

@@ -5,7 +5,9 @@
 """
 import os
 import sys
-import uvicorn
+import subprocess
+import time
+import signal
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
@@ -16,48 +18,75 @@ sys.path.insert(0, str(project_root))
 os.environ.setdefault("ENVIRONMENT", "local")
 
 def main():
-    """ローカル開発サーバーを起動"""
-    # 仮想環境の自動検出と切り替え
+    """バックエンドとフロントエンドを同時に起動"""
+    
+    # 仮想環境のPythonパス
     venv_python = project_root / "venv" / "bin" / "python"
-    if venv_python.exists():
-        # 現在のPythonがvenvのものでない場合、再実行
-        try:
-            # パスの正規化を行って比較
-            current_exe = Path(sys.executable).resolve()
-            target_exe = venv_python.resolve()
-            
-            if current_exe != target_exe:
-                print(f"🔄 Switching to virtual environment: {venv_python}")
-                os.execv(str(venv_python), [str(venv_python)] + sys.argv)
-        except Exception as e:
-            print(f"⚠️  Failed to switch to virtual environment: {e}")
+    if not venv_python.exists():
+        venv_python = Path(sys.executable)
 
-    print("🚀 Starting local development server...")
-    print("📁 Project root:", project_root)
-    print("🔗 Environment: local")
+    print("🚀 Starting local development environment...")
+    print(f"📁 Project root: {project_root}")
 
-    # 環境ファイルの確認
-    env_file = project_root / ".env"
-    if env_file.exists():
-        print(f"✅ Environment file found: {env_file}")
-    else:
-        print(f"⚠️  Environment file not found: {env_file}")
-        print("Please create .env file with database configuration")
+    processes = []
 
     try:
-        uvicorn.run(
-            "app.web.main:app",
-            host="127.0.0.1",
-            port=8000,
-            reload=True,
-            reload_dirs=[str(project_root / "app")],
-            log_level="info"
+        # 1. バックエンドの起動 (FastAPI)
+        print("📡 Starting Backend (FastAPI) on http://localhost:8000...")
+        backend_proc = subprocess.Popen(
+            [
+                str(venv_python), "-m", "uvicorn", 
+                "app.web.main:app", 
+                "--host", "127.0.0.1", 
+                "--port", "8000", 
+                "--reload"
+            ],
+            cwd=str(project_root)
         )
+        processes.append(backend_proc)
+
+        # 少し待ってからフロントエンドを起動
+        time.sleep(2)
+
+        # 2. フロントエンドの起動 (Next.js)
+        print("🎨 Starting Frontend (Next.js) on http://localhost:3000...")
+        frontend_dir = project_root / "frontend"
+        
+        # npm が利用可能か確認
+        frontend_proc = subprocess.Popen(
+            ["npm", "run", "dev"],
+            cwd=str(frontend_dir)
+        )
+        processes.append(frontend_proc)
+
+        print("\n✅ Both servers are running!")
+        print("🔗 Frontend: http://localhost:3000")
+        print("🔗 Backend API: http://localhost:8000")
+        print("💡 Press Ctrl+C to stop both servers\n")
+
+        # プロセスの監視
+        while True:
+            for p in processes:
+                if p.poll() is not None:
+                    # いずれかのプロセスが終了した場合は終了
+                    return
+            time.sleep(1)
+
     except KeyboardInterrupt:
-        print("\n👋 Local development server stopped")
-    except Exception as e:
-        print(f"❌ Error starting server: {e}")
-        sys.exit(1)
+        print("\n👋 Stopping servers...")
+    finally:
+        # 全プロセスを確実に終了させる
+        for p in processes:
+            if p.poll() is None:
+                p.terminate()
+        
+        # 完全に終了するのを待機
+        for p in processes:
+            p.wait()
+        print("✨ Done")
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
