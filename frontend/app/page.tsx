@@ -32,12 +32,11 @@ export default function Home() {
       color: 'bg-rose-500',
     },
     {
-      title: 'Private Analytics',
-      description: 'フォワードカーブ計算と詳細なPCAバストレポ。',
-      href: '/private',
-      icon: <ShieldCheck className="w-6 h-6" />,
+      title: 'Forward Curve',
+      description: 'スワップのフォワードカーブ(Fixed Start / Fixed Tenor)の可視化。',
+      href: '/forward-curve',
+      icon: <Activity className="w-6 h-6" />,
       color: 'bg-amber-500',
-      status: 'Coming Soon'
     },
   ];
 

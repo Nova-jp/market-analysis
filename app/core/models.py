@@ -25,6 +25,14 @@ class SwapYieldData(BaseModel):
     tenor: str = Field(..., description="期間 (1Y, 10Y等)")
 
 
+class ForwardRateData(BaseModel):
+    """フォワード金利データモデル"""
+    maturity: float = Field(..., description="残存年数 (X軸の値)")
+    rate: float = Field(..., description="フォワードレート(%)")
+    start_tenor: str = Field(..., description="開始期間 (1Y等)")
+    swap_tenor: str = Field(..., description="スワップ期間 (5Y等)")
+
+
 class ASWData(BaseModel):
     """ASW (Asset Swap Spread) データモデル"""
     maturity: float = Field(..., description="残存年数")
@@ -46,6 +54,15 @@ class ASWCurveResponse(BaseModel):
     """ASWカーブレスポンスモデル"""
     date: str = Field(..., description="対象日付 (YYYY-MM-DD)")
     data: List[ASWData] = Field(..., description="ASWデータ")
+    error: Optional[str] = Field(None, description="エラーメッセージ")
+
+
+class ForwardCurveResponse(BaseModel):
+    """フォワードカーブレスポンスモデル"""
+    date: str = Field(..., description="基準日付 (YYYY-MM-DD)")
+    type: str = Field(..., description="フォワードカーブの種類 (fixed-start / fixed-tenor)")
+    parameter: str = Field(..., description="固定パラメータ (n または m の文字列、例: '1Y')")
+    data: List[ForwardRateData] = Field(..., description="フォワードカーブデータ")
     error: Optional[str] = Field(None, description="エラーメッセージ")
 
 

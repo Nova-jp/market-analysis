@@ -52,6 +52,21 @@ export interface ASWCurveResponse {
   error?: string;
 }
 
+export interface ForwardRateData {
+  maturity: number;
+  rate: number;
+  start_tenor: string;
+  swap_tenor: string;
+}
+
+export interface ForwardCurveResponse {
+  date: string;
+  type: 'fixed-start' | 'fixed-tenor';
+  parameter: string;
+  data: ForwardRateData[];
+  error?: string;
+}
+
 // PCA Types
 export interface PCAComponent {
   pc_number: number;

@@ -69,6 +69,13 @@ if os.path.exists(dist_path):
         if not os.path.exists(path):
             path = os.path.join(dist_path, "pca/index.html")
         return path
+
+    @app.get("/asw", response_class=FileResponse)
+    async def asw_page():
+        path = os.path.join(dist_path, "asw.html")
+        if not os.path.exists(path):
+            path = os.path.join(dist_path, "asw/index.html")
+        return path
         
     @app.get("/market-amount", response_class=FileResponse)
     async def market_amount_page():
@@ -84,7 +91,7 @@ if os.path.exists(dist_path):
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
         # 見つからない場合は index.html を返す (SPA的な挙動)
-        return os.path.join(dist_path, "index.html")
+        return FileResponse(os.path.join(dist_path, "index.html"))
 else:
     # 開発環境等でビルド済みファイルがない場合
     @app.get("/")

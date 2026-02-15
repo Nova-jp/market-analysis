@@ -1,6 +1,7 @@
 import QuantLib as ql
 import pandas as pd
 from datetime import datetime
+from typing import List, Optional, Dict, Any
 
 class QuantLibHelper:
     def __init__(self, date_str: str):
@@ -27,6 +28,7 @@ class QuantLibHelper:
         # Cache for MMS calculation results to avoid redundant computations
         # Key: (maturity_date_str, fixed_freq_str, fixed_day_count_str, float_spread)
         self._mms_cache = {}
+        self._forward_cache = {}
 
     def _parse_date(self, date_str: str) -> ql.Date:
         d = datetime.strptime(date_str, "%Y-%m-%d")
@@ -207,5 +209,76 @@ class QuantLibHelper:
             print(f"Error calculating MMS for {maturity_date_str}: {e}")
             # import traceback
             # traceback.print_exc()
+            return None
+
+    def calculate_forward_swap_rate(self, start_tenor_str: str, swap_tenor_str: str) -> Optional[float]:
+        """
+        Calculates the forward par swap rate.
+        
+        Args:
+            start_tenor_str: Start of the swap (e.g., '1Y')
+            swap_tenor_str: Tenor of the swap (e.g., '5Y')
+            
+        Returns:
+            Forward Par Swap Rate in %
+        """
+        cache_key = (start_tenor_str, swap_tenor_str)
+        if cache_key in self._forward_cache:
+            return self._forward_cache[cache_key]
+
+        if not self.yield_curve_handle:
+            raise ValueError("Yield Curve not built. Call build_ois_curve first.")
+
+        try:
+            start_tenor = self._parse_tenor(start_tenor_str)
+            swap_tenor = self._parse_tenor(swap_tenor_str)
+            
+            # Use standard OIS conventions: Annual/Act365
+            # QuantLib has OvernightIndexedSwapIndex which simplifies forward rate calculation
+            
+            # The forward start date is usually (EvalDate + 2 days) + start_tenor
+            # But standard forward swap definitions might vary.
+            # Here we follow the convention of standard OIS:
+            # Spot = Eval + 2
+            # Forward Start = Spot + start_tenor
+            # Maturity = Forward Start + swap_tenor
+            
+            spot_date = self.calendar.advance(self.eval_date, 2, ql.Days)
+            forward_start_date = self.calendar.advance(spot_date, start_tenor)
+            maturity_date = self.calendar.advance(forward_start_date, swap_tenor)
+            
+            # Define schedule for the forward swap
+            schedule = ql.Schedule(
+                forward_start_date,
+                maturity_date,
+                ql.Period(ql.Annual),
+                self.calendar,
+                ql.ModifiedFollowing,
+                ql.ModifiedFollowing,
+                ql.DateGeneration.Backward,
+                False
+            )
+            
+            # Create a dummy OvernightIndexedSwap to calculate the fair rate
+            swap = ql.OvernightIndexedSwap(
+                ql.OvernightIndexedSwap.Payer,
+                10000.0,
+                schedule,
+                0.01, # dummy rate
+                ql.Actual365Fixed(),
+                self.tona_index
+            )
+            
+            engine = ql.DiscountingSwapEngine(self.yield_curve_handle)
+            swap.setPricingEngine(engine)
+            
+            fair_rate = swap.fairRate()
+            result = fair_rate * 100.0
+            
+            self._forward_cache[cache_key] = result
+            return result
+            
+        except Exception as e:
+            print(f"Error calculating forward swap rate for {start_tenor_str}x{swap_tenor_str}: {e}")
             return None
 

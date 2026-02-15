@@ -2,16 +2,23 @@
 イールドカーブデータAPI
 国債利回りデータの取得・加工
 """
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from datetime import datetime
 from typing import List, Optional
 import numpy as np
+import logging
 from scipy.interpolate import CubicSpline
 from pydantic import BaseModel, Field
 from app.core.database import db_manager
-from app.core.models import YieldCurveResponse, BondYieldData, SwapYieldData, ASWCurveResponse, ASWData, validate_date_format
+from app.core.models import (
+    YieldCurveResponse, BondYieldData, SwapYieldData, 
+    ASWCurveResponse, ASWData, validate_date_format,
+    ForwardCurveResponse, ForwardRateData
+)
+from analysis.finance.quantlib_helper import QuantLibHelper
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class SwapCurveResponse(BaseModel):
@@ -166,10 +173,11 @@ async def get_swap_data(
 
 @router.get("/api/asw-data/{date}", response_model=ASWCurveResponse)
 async def get_asw_data(
-    date: str = Path(..., description="取得日付 (YYYY-MM-DD形式)")
+    date: str = Path(..., description="取得日付 (YYYY-MM-DD形式)"),
+    force_calculate: bool = Query(False, description="DBにデータがない場合にオンデマンドで計算を実行するか")
 ):
     """指定日のASW (Asset Swap Spread) データ取得
-    ASW_data テーブルから正確な計算結果を取得 (なければ簡易補間)
+    ASW_data テーブルから正確な計算結果を取得 (なければ、force_calculate=true時のみ簡易補間)
     """
     try:
         # 1. Try to get accurate data from ASW_data
@@ -180,8 +188,8 @@ async def get_asw_data(
             for row in db_result["data"]:
                 try:
                     trade_dt = datetime.strptime(row['trade_date'], '%Y-%m-%d')
-                    if row.get('maturity_date'):
-                        due_dt = datetime.strptime(row['maturity_date'], '%Y-%m-%d')
+                    if row.get('due_date'):
+                        due_dt = datetime.strptime(row['due_date'], '%Y-%m-%d')
                     else:
                         continue
                         
@@ -206,13 +214,24 @@ async def get_asw_data(
                         swap_rate=round(swap_rate, 4),
                         asw=float(asw_val)
                     ))
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Row parse error in ASW_data: {e}")
                     continue
             
             if asw_results:
                 return ASWCurveResponse(date=date, data=asw_results)
 
-        # Fallback to legacy on-the-fly calculation if DB has no data
+        # 2. If no data found in DB, and not force_calculate, return empty
+        if not force_calculate:
+            logger.info(f"No pre-calculated ASW data found for {date} and force_calculate=False")
+            return ASWCurveResponse(
+                date=date,
+                data=[],
+                error=f"No pre-calculated ASW data found for {date}. Use force_calculate=true to compute on-the-fly."
+            )
+
+        # 3. Fallback to legacy on-the-fly calculation ONLY if force_calculate=true
+        logger.info(f"On-the-fly ASW calculation triggered for {date}")
         # 1. 国債データ取得
         bond_response = await get_yield_data(date)
         bond_data = bond_response.data
@@ -288,3 +307,110 @@ async def get_asw_data(
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/forward-curve/fixed-start/{date}", response_model=ForwardCurveResponse)
+async def get_forward_curve_fixed_start(
+    date: str = Path(..., description="取得日付 (YYYY-MM-DD形式)"),
+    n: str = Query("1Y", description="開始期間 (例: 1Y, 5Y)")
+):
+    """n年先スタートのフォワードカーブ取得 (F(n, n+t))"""
+    try:
+        if not validate_date_format(date):
+            raise HTTPException(status_code=400, detail="Invalid date format")
+
+        # スワップデータ(OIS)を取得
+        result = await db_manager.get_irs_data({
+            'trade_date': f'eq.{date}',
+            'product_type': 'eq.OIS',
+            'limit': 100
+        })
+
+        if not result["success"] or not result["data"]:
+            return ForwardCurveResponse(date=date, type="fixed-start", parameter=n, data=[], error=f"No OIS data for {date}")
+
+        # QuantLibでカーブ構築
+        ql_helper = QuantLibHelper(date)
+        ql_helper.build_ois_curve(result["data"])
+
+        # X軸：スワップ期間 t
+        test_tenors = ["1Y", "2Y", "3Y", "4Y", "5Y", "6Y", "7Y", "8Y", "9Y", "10Y", "12Y", "15Y", "20Y", "25Y", "30Y"]
+        forward_data = []
+
+        for t in test_tenors:
+            rate = ql_helper.calculate_forward_swap_rate(n, t)
+            if rate is not None:
+                maturity = convert_tenor_to_years(t)
+                forward_data.append(ForwardRateData(
+                    maturity=round(maturity, 3),
+                    rate=round(rate, 4),
+                    start_tenor=n,
+                    swap_tenor=t
+                ))
+
+        return ForwardCurveResponse(
+            date=date,
+            type="fixed-start",
+            parameter=n,
+            data=forward_data
+        )
+
+    except Exception as e:
+        logger.error(f"Error in get_forward_curve_fixed_start: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/forward-curve/fixed-tenor/{date}", response_model=ForwardCurveResponse)
+async def get_forward_curve_fixed_tenor(
+    date: str = Path(..., description="取得日付 (YYYY-MM-DD形式)"),
+    m: str = Query("5Y", description="スワップ期間 (例: 1Y, 5Y)")
+):
+    """m年物の一定期間フォワードカーブ取得 (F(t, t+m) を t+m にプロット)"""
+    try:
+        if not validate_date_format(date):
+            raise HTTPException(status_code=400, detail="Invalid date format")
+
+        # スワップデータ(OIS)を取得
+        result = await db_manager.get_irs_data({
+            'trade_date': f'eq.{date}',
+            'product_type': 'eq.OIS',
+            'limit': 100
+        })
+
+        if not result["success"] or not result["data"]:
+            return ForwardCurveResponse(date=date, type="fixed-tenor", parameter=m, data=[], error=f"No OIS data for {date}")
+
+        # QuantLibでカーブ構築
+        ql_helper = QuantLibHelper(date)
+        ql_helper.build_ois_curve(result["data"])
+
+        # X軸：開始時期 t + 期間 m
+        test_starts = ["1Y", "2Y", "3Y", "4Y", "5Y", "6Y", "7Y", "8Y", "9Y", "10Y", "12Y", "15Y", "20Y", "25Y"]
+        forward_data = []
+        
+        m_years = convert_tenor_to_years(m)
+
+        for t in test_starts:
+            rate = ql_helper.calculate_forward_swap_rate(t, m)
+            if rate is not None:
+                t_years = convert_tenor_to_years(t)
+                # t+m の位置にプロット
+                maturity = t_years + m_years
+                forward_data.append(ForwardRateData(
+                    maturity=round(maturity, 3),
+                    rate=round(rate, 4),
+                    start_tenor=t,
+                    swap_tenor=m
+                ))
+
+        return ForwardCurveResponse(
+            date=date,
+            type="fixed-tenor",
+            parameter=m,
+            data=forward_data
+        )
+
+    except Exception as e:
+        logger.error(f"Error in get_forward_curve_fixed_tenor: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
