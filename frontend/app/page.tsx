@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { TrendingUp, BarChart3, Database, ShieldCheck, Activity } from 'lucide-react';
+import { TrendingUp, BarChart3, Database, ShieldCheck, Activity, FileSpreadsheet } from 'lucide-react';
 
 export default function Home() {
   const tools = [
@@ -37,6 +37,13 @@ export default function Home() {
       href: '/forward-curve',
       icon: <Activity className="w-6 h-6" />,
       color: 'bg-amber-500',
+    },
+    {
+      title: 'Export / Analysis Sheets',
+      description: 'ASW・TONA・IMM OISフォワードレートなどの分析データをExcelでダウンロード。',
+      href: '/export',
+      icon: <FileSpreadsheet className="w-6 h-6" />,
+      color: 'bg-teal-500',
     },
   ];
 
