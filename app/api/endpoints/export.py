@@ -311,29 +311,25 @@ _IMM_ZSCORE_ROWS = [
 ]
 
 
-def _compute_imm_days(imm_cols: list) -> list[int]:
-    """各IMM日付から次のIMM日付までの暦日数を返す。最後の列は前の間隔を流用。"""
-    dates = [date.fromisoformat(ds) for _, ds in imm_cols]
-    days = []
-    for i in range(len(dates) - 1):
-        days.append((dates[i + 1] - dates[i]).days)
-    # 最後の列: 直前の間隔を使う（通常91日前後）
-    days.append(days[-1] if days else 91)
-    return days
+def _compute_imm_days(imm_cols: list, reference_date: date) -> list[int]:
+    """reference_date（今日）から各IMM日付までの暦日数を返す。"""
+    return [(date.fromisoformat(ds) - reference_date).days for _, ds in imm_cols]
 
 
 def _build_imm_standalone_sheet(wb: Workbook, imm_cols: list,
-                                  matrix_rows: list, sheet_name: str):
+                                  matrix_rows: list, sheet_name: str,
+                                  reference_date: date = None):
     """IMM単体Excel用シート。
 
     行1 : IMMコード (U26, Z26, H27 ...)
     行2 : 実際のIMM日付 (第3水曜日の日付文字列)
-    行3 : 次のIMM日付までの日数 (Excelでフォワード計算に使用)
+    行3 : 今日からIMM日付までの暦日数
     行4-8: Z-score (10D/20D/50D/100D/200D) ← DATA_START_ROW=14 参照
     行9-13: 空白
     行14- : データ (trade_date 降順)
 
     imm_cols: [(code, date_str), ...]
+    reference_date: 日数計算の基準日（今日）
     """
     ws = wb.create_sheet(sheet_name)
     col_labels  = [code for code, _ in imm_cols]
@@ -343,9 +339,10 @@ def _build_imm_standalone_sheet(wb: Workbook, imm_cols: list,
     # ── 行1・行2: コード・日付ヘッダー ──────────────────────────
     _write_header_rows(ws, col_labels, row2_labels)
 
-    # ── 行3: 次のIMMまでの日数 ────────────────────────────────
-    _cell(ws, 3, 1, "days", _DAYS_FILL, _DAYS_FONT, _CENTER)
-    days_list = _compute_imm_days(imm_cols)
+    # ── 行3: 今日からIMM日付までの暦日数 ──────────────────────
+    ref = reference_date or _jst_today()
+    _cell(ws, 3, 1, "days from today", _DAYS_FILL, _DAYS_FONT, _CENTER)
+    days_list = _compute_imm_days(imm_cols, ref)
     for ci, d in enumerate(days_list, 2):
         c = ws.cell(3, ci, d)
         c.fill, c.font, c.alignment, c.border = _DAYS_FILL, _DAYS_FONT, _CENTER, _THIN
@@ -671,16 +668,16 @@ async def download_asw_matrix(
 # ─────────────────────────────────────────────
 # IMM専用計算（軽量版: carry/inst は計算しない）
 # ─────────────────────────────────────────────
-def _compute_imm_rates_only_sync(
+def _compute_imm_spot_rates_sync(
     dates_ois: dict,   # {date_str: {tenor: rate_pct}}
     imm_cols: list,    # [(code, date_str), ...]
-) -> tuple:            # (imm_results_3m, imm_results_1y)
+) -> dict:             # {date_str: {code: rate_%}}
     """
-    OISカーブを構築し、IMM日付開始の 3M / 1Y フォワードレートのみ計算する。
-    carry-roll / inst-fwd は計算しないため asw-matrix より高速。
+    各営業日について OISカーブを構築し、
+    スポット日（eval_date + 2営業日）から各IMM日付までのOISパースワップレートを計算する。
+    例: Z31 → today+2 から 2031-12-17 までの OIS スワップレート [%]
     """
-    imm_results_3m: dict = {}
-    imm_results_1y: dict = {}
+    imm_results: dict = {}
 
     with _ql_lock:
         for date_str, ois_rates in sorted(dates_ois.items()):
@@ -699,28 +696,18 @@ def _compute_imm_rates_only_sync(
                 logger.debug(f"OIS curve build failed for {date_str}: {e}")
                 continue
 
-            imm_row_3m: dict = {}
-            imm_row_1y: dict = {}
-
+            row: dict = {}
             for code, imm_date_str in imm_cols:
                 try:
-                    r3m = ql_helper.calculate_forward_from_start_date(imm_date_str, "3M")
-                    if r3m is not None:
-                        imm_row_3m[code] = round(r3m, 4)
+                    r = ql_helper.calculate_spot_ois_to_date(imm_date_str)
+                    if r is not None:
+                        row[code] = r
                 except Exception as e:
-                    logger.debug(f"IMM 3M failed {date_str} {code}: {e}")
+                    logger.debug(f"IMM spot OIS failed {date_str} {code}: {e}")
 
-                try:
-                    r1y = ql_helper.calculate_forward_from_start_date(imm_date_str, "1Y")
-                    if r1y is not None:
-                        imm_row_1y[code] = round(r1y, 4)
-                except Exception as e:
-                    logger.debug(f"IMM 1Y failed {date_str} {code}: {e}")
+            imm_results[date_str] = row
 
-            imm_results_3m[date_str] = imm_row_3m
-            imm_results_1y[date_str] = imm_row_1y
-
-    return imm_results_3m, imm_results_1y
+    return imm_results
 
 
 # ─────────────────────────────────────────────
@@ -783,32 +770,26 @@ async def download_imm_rates(
             f"{len(tona_pivot)} dates"
         )
 
-        # ── 4. QuantLib IMM計算 ────────────────────────────────────
-        imm_results_3m, imm_results_1y = await run_in_threadpool(
-            _compute_imm_rates_only_sync,
+        # ── 4. QuantLib IMM スポットレート計算 ────────────────────
+        imm_results = await run_in_threadpool(
+            _compute_imm_spot_rates_sync,
             dict(tona_pivot),
             imm_cols,
         )
-        imm_rows_3m_desc = sorted(imm_results_3m.items(), reverse=True)
-        imm_rows_1y_desc = sorted(imm_results_1y.items(), reverse=True)
-        logger.info(f"IMM computation done: {len(imm_results_3m)} dates")
+        imm_rows_desc = sorted(imm_results.items(), reverse=True)
+        logger.info(f"IMM spot computation done: {len(imm_results)} dates")
 
         # ── 5. Excel 生成 ──────────────────────────────────────────
         wb = Workbook()
         wb.remove(wb.active)
 
         # 実際にデータがある列のみ抽出
-        available_cols_3m = [
+        available_cols = [
             (code, ds) for code, ds in imm_cols
-            if any(code in d for _, d in imm_rows_3m_desc)
-        ]
-        available_cols_1y = [
-            (code, ds) for code, ds in imm_cols
-            if any(code in d for _, d in imm_rows_1y_desc)
+            if any(code in d for _, d in imm_rows_desc)
         ]
 
-        _build_imm_standalone_sheet(wb, available_cols_3m, imm_rows_3m_desc, "IMM_3M_FWD")
-        _build_imm_standalone_sheet(wb, available_cols_1y, imm_rows_1y_desc, "IMM_1Y_FWD")
+        _build_imm_standalone_sheet(wb, available_cols, imm_rows_desc, "IMM_SPOT_OIS", reference_date=today)
 
         # ── 6. ストリーム返却 ──────────────────────────────────────
         buf = io.BytesIO()

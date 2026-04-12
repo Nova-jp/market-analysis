@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileSpreadsheet, Download, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 type DownloadState = 'idle' | 'loading' | 'done' | 'error';
 
@@ -106,8 +106,7 @@ const EXPORT_CARDS: ExportCard[] = [
     description: 'IMM日付ストリップの OIS フォワードレート（40年分 ≈ 160列）',
     note: '列: IMMコード（U26, Z26, H27...）、行2: 実際の第3水曜日の日付',
     sheets: [
-      { name: 'IMM_3M_FWD', description: '各IMM日付開始の 3M OIS フォワードレート [%]' },
-      { name: 'IMM_1Y_FWD', description: '各IMM日付開始の 1Y OIS フォワードレート [%]' },
+      { name: 'IMM_SPOT_OIS', description: 'スポット日から各IMM日付までの OIS パースワップレート [%]' },
     ],
     endpoint: '/api/export/imm-rates',
     defaultLookback: 200,
