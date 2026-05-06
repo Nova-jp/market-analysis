@@ -43,7 +43,7 @@ sys.path.insert(0, str(project_root))
 load_dotenv()
 
 # 営業日判定関数を共通モジュールからインポート
-from data.utils.date_utils import (
+from core.utils.date_utils import (
     is_business_day,
     get_previous_business_day
 )

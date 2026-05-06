@@ -125,16 +125,16 @@ SESSION_STATUS.md
 README_*.md
 
 # Node.js (Modern Frontend)
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/.env*.local
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
-frontend/.pnp*
-frontend/.pnp.js
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/.env*.local
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/.pnp*
+web/.pnp.js
 
 # 旧ディレクトリ構造（移行後削除予定）
 webapp/
@@ -149,4 +149,6 @@ requirements-*.txt
 !CLAUDE.md
 .vercel
 data_exports/
-!frontend/lib/
+exports/*.xlsx
+exports/*.csv
+!web/lib/

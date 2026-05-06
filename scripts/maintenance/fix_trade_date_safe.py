@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 from supabase import create_client
-from data.utils.database_manager import DatabaseManager
-from data.utils.date_utils import get_previous_business_day
+from core.db.sync_client import DatabaseManager
+from core.utils.date_utils import get_previous_business_day
 
 load_dotenv()
 

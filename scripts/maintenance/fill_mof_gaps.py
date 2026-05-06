@@ -6,8 +6,8 @@ import logging
 # パスを通す
 sys.path.append(os.getcwd())
 
-from data.collectors.mof.bond_auction_web_collector import BondAuctionWebCollector
-from data.utils.database_manager import DatabaseManager
+from pipeline.fetchers.mof.bond_auction_web_collector import BondAuctionWebCollector
+from core.db.sync_client import DatabaseManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
