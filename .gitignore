@@ -119,6 +119,9 @@ run_*.sh
 # Claude Code specific
 .claude/
 
+# キャッシュ
+.cache/
+
 # 一時的なドキュメント
 PROJECT_STRUCTURE.md
 SESSION_STATUS.md
