@@ -47,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 USER appuser
 
 # 起動
-CMD exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port $PORT"]
