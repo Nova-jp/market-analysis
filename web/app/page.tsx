@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { TrendingUp, BarChart3, Database, ShieldCheck, Activity, FileSpreadsheet } from 'lucide-react';
+import { TrendingUp, BarChart3, Database, ShieldCheck, Activity, FileSpreadsheet, Grid3X3 } from 'lucide-react';
 
 export default function Home() {
   const tools = [
@@ -44,6 +44,13 @@ export default function Home() {
       href: '/export',
       icon: <FileSpreadsheet className="w-6 h-6" />,
       color: 'bg-teal-500',
+    },
+    {
+      title: 'IMM Forward Matrix',
+      description: 'IMM日付間のOISフォワードレートを40×40マトリックスで可視化。Z-scoreによる割高・割安分析。',
+      href: '/imm-forward-matrix',
+      icon: <Grid3X3 className="w-6 h-6" />,
+      color: 'bg-violet-500',
     },
   ];
 

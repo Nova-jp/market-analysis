@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from api.services.scheduler import SchedulerService
 from api.services.irs import IRSSchedulerService
 from api.services.asw import ASWSchedulerService
+from api.services.imm_forward_matrix import IMMForwardMatrixService
 from api.services.macro import MacroSchedulerService
 from core.calculations.pca import PCAService
 
@@ -45,6 +46,7 @@ def get_calendar_collector():
 scheduler_service = SchedulerService()
 irs_scheduler_service = IRSSchedulerService()
 asw_scheduler_service = ASWSchedulerService()
+imm_matrix_service = IMMForwardMatrixService()
 macro_scheduler_service = MacroSchedulerService()
 
 
@@ -436,15 +438,29 @@ async def asw_daily_calculation(
 
         if result["status"] in ["success", "skipped"]:
             logger.info(f"ASW calculation task finished: {result.get('message')}")
-            return result
         else:
             logger.error(f"ASW calculation failed: {result.get('message')}")
+
+        # IMM フォワードマトリックス計算（ASW と同タイミング・独立して実行）
+        try:
+            result_imm = await imm_matrix_service.calculate_daily()
+            logger.info(f"IMM forward matrix task finished: {result_imm.get('message')}")
+        except Exception as imm_err:
+            logger.error(f"IMM forward matrix calculation failed: {imm_err}", exc_info=True)
+            result_imm = {"status": "error", "message": str(imm_err)}
+
+        if result["status"] not in ["success", "skipped"]:
             raise HTTPException(status_code=500, detail=result.get("message"))
+
+        return {
+            "asw": result,
+            "imm_forward_matrix": result_imm,
+        }
 
     except HTTPException:
         raise
     except Exception as e:
-        error_msg = f"Unexpected error in ASW calculation: {str(e)}"
+        error_msg = f"Unexpected error in ASW/IMM calculation: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise HTTPException(status_code=500, detail=error_msg)
 

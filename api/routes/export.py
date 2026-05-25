@@ -37,6 +37,7 @@ from zoneinfo import ZoneInfo
 
 from core.db.engine import AsyncSessionLocal
 from core.calculations.bond_math import QuantLibHelper
+from core.utils.date_utils import third_wednesday as _third_wednesday_core, get_imm_strip_columns as _get_imm_strip_columns_core
 
 _JST = ZoneInfo("Asia/Tokyo")
 
@@ -120,32 +121,11 @@ def _tenor_to_months(tenor: str) -> float:
 
 
 def _third_wednesday(year: int, month: int) -> date:
-    """指定年月の第3水曜日を返す"""
-    d = date(year, month, 1)
-    days_to_wed = (2 - d.weekday()) % 7
-    return d + timedelta(days=days_to_wed + 14)
+    return _third_wednesday_core(year, month)
 
 
 def _get_imm_strip_columns(from_date: date, years: int = 10, max_cols: int = 40) -> list:
-    """from_date 翌日以降のIMM日を生成。戻り値: [(code, date_str), ...]
-    years=40, max_cols=160 とすると40年分≈160列を生成する。
-    """
-    MONTH_CODE = {3: 'H', 6: 'M', 9: 'U', 12: 'Z'}
-    IMM_MONTHS = [3, 6, 9, 12]
-    end_date = date(from_date.year + years, 12, 31)
-
-    results = []
-    for year in range(from_date.year, from_date.year + years + 2):
-        for month in IMM_MONTHS:
-            imm_date = _third_wednesday(year, month)
-            if imm_date <= from_date:
-                continue
-            if imm_date > end_date:
-                return results[:max_cols]
-            code = f"{MONTH_CODE[month]}{str(year)[-2:]}"
-            results.append((code, str(imm_date)))
-
-    return results[:max_cols]
+    return _get_imm_strip_columns_core(from_date, years=years, max_cols=max_cols)
 
 
 def _cell(ws, row: int, col: int, value, fill, font, alignment):

@@ -8,6 +8,40 @@ from typing import Union
 import jpholiday
 
 
+def third_wednesday(year: int, month: int) -> date:
+    """指定年月の第3水曜日を返す"""
+    d = date(year, month, 1)
+    days_to_wed = (2 - d.weekday()) % 7
+    return d + timedelta(days=days_to_wed + 14)
+
+
+def get_imm_strip_columns(
+    from_date: date,
+    years: int = 10,
+    max_cols: int = 40,
+) -> list[tuple[str, str]]:
+    """from_date 翌日以降の IMM 日付を生成。戻り値: [(code, date_str), ...]
+
+    IMM 月: 3(H), 6(M), 9(U), 12(Z)。years=10, max_cols=40 で 10 年分 ≈ 40 列。
+    """
+    MONTH_CODE = {3: "H", 6: "M", 9: "U", 12: "Z"}
+    IMM_MONTHS = [3, 6, 9, 12]
+    end_date = date(from_date.year + years, 12, 31)
+
+    results = []
+    for year in range(from_date.year, from_date.year + years + 2):
+        for month in IMM_MONTHS:
+            imm_date = third_wednesday(year, month)
+            if imm_date <= from_date:
+                continue
+            if imm_date > end_date:
+                return results[:max_cols]
+            code = f"{MONTH_CODE[month]}{str(year)[-2:]}"
+            results.append((code, str(imm_date)))
+
+    return results[:max_cols]
+
+
 def is_business_day(date_obj: Union[date, str]) -> bool:
     """営業日かどうか判定（土日祝日は False）"""
     if isinstance(date_obj, str):

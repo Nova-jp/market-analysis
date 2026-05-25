@@ -175,3 +175,15 @@ export interface BondSearchResponse {
   bonds: BondSearchItem[];
   count: number;
 }
+
+// IMM Forward Matrix Types
+export interface IMMForwardSnapshot {
+  codes: string[];       // 40 IMM codes in chronological order
+  imm_dates: string[];   // actual calendar dates for each code
+  rates: (number | null)[]; // 780 values: upper triangle, row-major
+}
+
+export interface IMMForwardHistoryResponse {
+  trade_dates: string[];          // 200 trading days (ascending)
+  snapshots: IMMForwardSnapshot[]; // one per trade_date
+}

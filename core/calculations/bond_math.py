@@ -345,6 +345,64 @@ class QuantLibHelper:
             self._forward_cache[cache_key] = None
             return None
 
+    def calculate_forward_between_dates(
+        self, start_date_str: str, end_date_str: str
+    ) -> Optional[float]:
+        """
+        start_date から end_date までの OIS フォワードパースワップレート [%]。
+
+        IMM 日付ペアの 2D マトリックス計算用。
+        calculate_forward_from_start_date と異なり、終了日を直接指定するため
+        calendar.advance のビジネスデー調整でずれが生じない。
+        """
+        cache_key = (f"fwd_{start_date_str}", f"to_{end_date_str}")
+        if cache_key in self._forward_cache:
+            return self._forward_cache[cache_key]
+
+        if not self.yield_curve_handle:
+            raise ValueError("Yield Curve not built. Call build_ois_curve first.")
+
+        try:
+            start_date = self._parse_date(start_date_str)
+            end_date = self._parse_date(end_date_str)
+            spot_date = self.calendar.advance(self.eval_date, 2, ql.Days)
+
+            if start_date <= spot_date or end_date <= start_date:
+                self._forward_cache[cache_key] = None
+                return None
+
+            schedule = ql.Schedule(
+                start_date,
+                end_date,
+                ql.Period(ql.Annual),
+                self.calendar,
+                ql.ModifiedFollowing,
+                ql.ModifiedFollowing,
+                ql.DateGeneration.Backward,
+                False,
+            )
+
+            swap = ql.OvernightIndexedSwap(
+                ql.OvernightIndexedSwap.Payer,
+                10000.0,
+                schedule,
+                0.01,
+                ql.Actual365Fixed(),
+                self.tona_index,
+            )
+
+            engine = ql.DiscountingSwapEngine(self.yield_curve_handle)
+            swap.setPricingEngine(engine)
+
+            result = round(swap.fairRate() * 100.0, 6)
+            self._forward_cache[cache_key] = result
+            return result
+
+        except Exception as e:
+            print(f"Error calculating forward {start_date_str} → {end_date_str}: {e}")
+            self._forward_cache[cache_key] = None
+            return None
+
     def calculate_spot_ois_to_date(self, maturity_date_str: str) -> Optional[float]:
         """
         OISカーブからスポット日（eval_date + 2営業日）を基準とした

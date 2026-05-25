@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from api.routes import health, dates, yield_data, scheduler, pca, market_amount, private_analytics, export
+from api.routes import health, dates, yield_data, scheduler, pca, market_amount, private_analytics, export, imm_forward_matrix
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ app.include_router(pca.router, prefix="/api/pca", tags=["pca"])
 app.include_router(market_amount.router, tags=["market_amount"])
 app.include_router(private_analytics.router, prefix="/api/private", tags=["private"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
+app.include_router(imm_forward_matrix.router, prefix="/api/imm-forward-matrix", tags=["imm-forward-matrix"])
 
 # 静的ファイルの配信設定 (Next.jsビルド成果物)
 # Docker本番: static/dist、ローカル開発: web/out
@@ -93,6 +94,13 @@ if os.path.exists(dist_path):
         path = os.path.join(dist_path, "market-amount.html")
         if not os.path.exists(path):
             path = os.path.join(dist_path, "market-amount/index.html")
+        return path
+
+    @app.get("/imm-forward-matrix", response_class=FileResponse)
+    async def imm_forward_matrix_page():
+        path = os.path.join(dist_path, "imm-forward-matrix.html")
+        if not os.path.exists(path):
+            path = os.path.join(dist_path, "imm-forward-matrix/index.html")
         return path
 
     @app.get("/{path:path}")
