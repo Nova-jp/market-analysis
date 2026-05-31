@@ -154,6 +154,18 @@ class BondSearchResponse(BaseModel):
     count: int
 
 
+class InstantaneousForwardPoint(BaseModel):
+    maturity_years: float = Field(..., description="残存年数")
+    forward_rate: float = Field(..., description="瞬間フォワードレート(%・連続複利)")
+    zero_rate: float = Field(..., description="ゼロレート(%・連続複利)")
+
+
+class InstantaneousForwardResponse(BaseModel):
+    date: str = Field(..., description="対象日付 (YYYY-MM-DD)")
+    data: List[InstantaneousForwardPoint] = Field(..., description="瞬間フォワード・ゼロレート系列")
+    error: Optional[str] = Field(None, description="エラーメッセージ")
+
+
 # バリデーション関数
 def validate_date_format(date_string: str) -> bool:
     try:

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { TrendingUp, BarChart3, Database, ShieldCheck, Activity, FileSpreadsheet, Grid3X3 } from 'lucide-react';
+import { TrendingUp, BarChart3, Database, ShieldCheck, Activity, FileSpreadsheet, Grid3X3, Waves } from 'lucide-react';
 
 export default function Home() {
   const tools = [
@@ -51,6 +51,13 @@ export default function Home() {
       href: '/imm-forward-matrix',
       icon: <Grid3X3 className="w-6 h-6" />,
       color: 'bg-violet-500',
+    },
+    {
+      title: 'Instantaneous Forward',
+      description: 'OIS カーブから導出した瞬間フォワードレートとゼロ曲線をオーバーレイ表示。複数日付の比較も可能。',
+      href: '/instantaneous-forward',
+      icon: <Waves className="w-6 h-6" />,
+      color: 'bg-cyan-500',
     },
   ];
 

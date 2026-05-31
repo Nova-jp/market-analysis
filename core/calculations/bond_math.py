@@ -81,8 +81,8 @@ class QuantLibHelper:
             rate_helpers.append(helper)
             
         # Build the curve
-        self.yield_curve = ql.PiecewiseLogCubicDiscount(
-            2, # settlement days (reference date = eval date + 2)
+        self.yield_curve = ql.PiecewiseConvexMonotoneForward(
+            2,
             self.calendar,
             rate_helpers,
             self.day_counter
@@ -402,6 +402,40 @@ class QuantLibHelper:
             print(f"Error calculating forward {start_date_str} → {end_date_str}: {e}")
             self._forward_cache[cache_key] = None
             return None
+
+    def calculate_instantaneous_forward_curve(
+        self, max_years: float = 10.0, num_points: int = 240
+    ) -> list:
+        """
+        瞬間フォワードレートとゼロレートを密なグリッドでサンプリングする。
+        PiecewiseConvexMonotoneForward はフォワードレートを直接内部に持つため、
+        1日幅の短区間フォワードで瞬間フォワードを近似する。
+        """
+        if not self.yield_curve_handle:
+            raise ValueError("Yield Curve not built. Call build_ois_curve first.")
+
+        spot_date = self.calendar.advance(self.eval_date, 2, ql.Days)
+        results = []
+        for i in range(1, num_points + 1):
+            days = int(i * max_years * 365 / num_points)
+            d = spot_date + days
+            d2 = d + 1
+            t_years = self.day_counter.yearFraction(spot_date, d)
+
+            fwd = self.yield_curve.forwardRate(
+                d, d2, self.day_counter, ql.Continuous, ql.Annual
+            ).rate() * 100.0
+
+            zero = self.yield_curve.zeroRate(
+                d, self.day_counter, ql.Continuous, ql.Annual
+            ).rate() * 100.0
+
+            results.append({
+                "maturity_years": round(t_years, 4),
+                "forward_rate": round(fwd, 6),
+                "zero_rate": round(zero, 6),
+            })
+        return results
 
     def calculate_spot_ois_to_date(self, maturity_date_str: str) -> Optional[float]:
         """

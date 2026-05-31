@@ -176,6 +176,19 @@ export interface BondSearchResponse {
   count: number;
 }
 
+// Instantaneous Forward Types
+export interface InstantaneousForwardPoint {
+  maturity_years: number;
+  forward_rate: number;
+  zero_rate: number;
+}
+
+export interface InstantaneousForwardResponse {
+  date: string;
+  data: InstantaneousForwardPoint[];
+  error?: string;
+}
+
 // IMM Forward Matrix Types
 export interface IMMForwardSnapshot {
   codes: string[];       // 40 IMM codes in chronological order
