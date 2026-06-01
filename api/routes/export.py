@@ -25,7 +25,6 @@ GET /api/export/asw-matrix
 
 import io
 import logging
-import threading
 from datetime import date, timedelta
 from typing import Optional
 
@@ -36,7 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from zoneinfo import ZoneInfo
 
 from core.db.engine import AsyncSessionLocal
-from core.calculations.bond_math import QuantLibHelper
+from core.calculations.bond_math import QuantLibHelper, _ql_lock
 from core.utils.date_utils import third_wednesday as _third_wednesday_core, get_imm_strip_columns as _get_imm_strip_columns_core
 
 _JST = ZoneInfo("Asia/Tokyo")
@@ -55,10 +54,6 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# QuantLib はプロセス内グローバル状態 (evaluationDate) を持つため、
-# 複数リクエストの同時実行で競合しないようにロックで直列化する
-_ql_lock = threading.Lock()
 
 # ─────────────────────────────────────────────
 # 定数

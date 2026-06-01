@@ -1,7 +1,12 @@
+import threading
 import QuantLib as ql
 import pandas as pd
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+# QuantLib の evaluationDate はプロセス全体のシングルトン。
+# run_in_threadpool で並行実行する際は必ずこのロックを取得する。
+_ql_lock = threading.Lock()
 
 class QuantLibHelper:
     def __init__(self, date_str: str):
@@ -418,6 +423,8 @@ class QuantLibHelper:
         results = []
         for i in range(1, num_points + 1):
             days = int(i * max_years * 365 / num_points)
+            if days == 0:
+                continue
             d = spot_date + days
             d2 = d + 1
             t_years = self.day_counter.yearFraction(spot_date, d)

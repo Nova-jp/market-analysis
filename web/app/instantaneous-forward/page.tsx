@@ -45,7 +45,6 @@ export default function InstantaneousForwardPage() {
   const addDate = useCallback(
     async (date: string) => {
       if (!date) return;
-      if (datasets.some((ds) => ds.date === date)) return;
       setLoading(true);
       setError(null);
       try {
@@ -57,8 +56,8 @@ export default function InstantaneousForwardPage() {
           return;
         }
         setDatasets((prev) => {
-          const next = [...prev, { date, data: resp.data, color: PALETTE[prev.length % PALETTE.length] }];
-          return next;
+          if (prev.some((ds) => ds.date === date)) return prev;
+          return [...prev, { date, data: resp.data, color: PALETTE[prev.length % PALETTE.length] }];
         });
       } catch (e: any) {
         setError(e.detail ?? 'データの取得に失敗しました。');
@@ -66,7 +65,7 @@ export default function InstantaneousForwardPage() {
         setLoading(false);
       }
     },
-    [datasets],
+    [],
   );
 
   const removeDate = (date: string) => {

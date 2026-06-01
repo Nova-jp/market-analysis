@@ -17,8 +17,13 @@ from api.routes import health, dates, yield_data, scheduler, pca, market_amount,
 async def lifespan(app: FastAPI):
     from sqlalchemy import text
     from core.db.engine import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        await session.execute(text("SELECT 1"))
+    # DB 接続確認は非致命的: Neon の auto-suspend からの wake-up が timeout しても
+    # アプリを起動させ、スケジューラーリクエストを取りこぼさないようにする
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        print(f"Warning: DB health check failed on startup (non-fatal): {e}")
     print(f"{settings.app_name} starting...")
     yield
     print(f"{settings.app_name} shutting down...")

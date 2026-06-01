@@ -49,7 +49,7 @@ class PrivateAnalysisService:
             return None
             
         try:
-            curve = ql.PiecewiseLogCubicDiscount(eval_date, helpers, ql.Actual365Fixed())
+            curve = ql.PiecewiseConvexMonotoneForward(eval_date, helpers, ql.Actual365Fixed())
             curve.enableExtrapolation()
             return curve
         except Exception:

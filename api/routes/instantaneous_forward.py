@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from starlette.concurrency import run_in_threadpool
 
 from core.db.async_client import db_manager
-from core.calculations.bond_math import QuantLibHelper
+from core.calculations.bond_math import QuantLibHelper, _ql_lock
 from core.models.schemas import InstantaneousForwardResponse, validate_date_format
 
 logger = logging.getLogger(__name__)
@@ -14,9 +14,10 @@ _MIN_OIS_POINTS = 4
 
 
 def _calc_sync(date: str, ois_data: list, max_years: float, num_points: int) -> list:
-    helper = QuantLibHelper(date)
-    helper.build_ois_curve(ois_data)
-    return helper.calculate_instantaneous_forward_curve(max_years=max_years, num_points=num_points)
+    with _ql_lock:
+        helper = QuantLibHelper(date)
+        helper.build_ois_curve(ois_data)
+        return helper.calculate_instantaneous_forward_curve(max_years=max_years, num_points=num_points)
 
 
 @router.get("/api/instantaneous-forward/{date}", response_model=InstantaneousForwardResponse)

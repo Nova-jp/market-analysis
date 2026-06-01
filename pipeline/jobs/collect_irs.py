@@ -10,7 +10,7 @@ from datetime import datetime, date
 import logging
 
 # プロジェクトルートをパスに追加
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from pipeline.fetchers.jscc.irs_collector import IRSCollector
